@@ -44,7 +44,7 @@ from jose import jwt, JWTError
 # Configuration
 # --------------------------------------------------------------------------
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ktc.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL.startswith("postgres://"):
     # Render / Heroku style URLs use the old "postgres://" scheme; SQLAlchemy
     # (via psycopg2) needs "postgresql://".
