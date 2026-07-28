@@ -22,6 +22,7 @@ so it can be run and demoed immediately.
 import os
 import uuid
 import shutil
+import logging
 import datetime as dt
 from typing import Optional, List
 
@@ -36,19 +37,26 @@ from sqlalchemy import (
     ForeignKey, Text, Enum as SAEnum
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
+from sqlalchemy.exc import IntegrityError
 
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+
+logger = logging.getLogger("ktc_ipfms")
+logging.basicConfig(level=logging.INFO)
 
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL.startswith("postgres://"):
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     # Render / Heroku style URLs use the old "postgres://" scheme; SQLAlchemy
     # (via psycopg2) needs "postgresql://".
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./ktc.db"
 
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret-in-production")
 JWT_ALGORITHM = "HS256"
@@ -471,26 +479,65 @@ app.mount("/files", StaticFiles(directory=UPLOAD_DIR), name="files")
 
 @app.on_event("startup")
 def seed_data():
+    """
+    Idempotent startup seeding.
+
+    IMPORTANT: this must never crash the app. Earlier versions gated seeding
+    purely on `User.count() == 0`, which is unsafe: if a prior deploy created
+    the Department row but then failed/restarted before the User row was
+    committed (or if the users table was ever cleared independently of
+    departments), the count-based check becomes true again and the app tries
+    to re-insert a Department with a name that already has a UNIQUE
+    constraint on it -> IntegrityError -> "Application startup failed."
+
+    Fix: look up each seed row by its natural/unique key first (get-or-create)
+    instead of relying on a derived count, and wrap the whole routine in a
+    try/except so a seeding hiccup never takes the whole API down.
+    """
     db = SessionLocal()
     try:
-        if db.query(User).count() == 0:
-            dep = Department(name="Administration and Support Services", code="ADM")
-            db.add(dep)
-            db.commit()
-            db.refresh(dep)
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@karugutu.town.go.ug")
+        admin_password = os.getenv("ADMIN_PASSWORD", "Admin@2026")
+        default_dept_name = "Administration and Support Services"
+        default_dept_code = "ADM"
 
-            admin_email = os.getenv("ADMIN_EMAIL", "admin@karugutu.town.go.ug")
-            admin_password = os.getenv("ADMIN_PASSWORD", "Admin@2026")
+        # 1) Get-or-create the default department by its unique name.
+        dep = db.query(Department).filter(Department.name == default_dept_name).first()
+        if not dep:
+            # Also guard against the code already existing under a
+            # different name (code is unique too).
+            dep = db.query(Department).filter(Department.code == default_dept_code).first()
+        if not dep:
+            dep = Department(name=default_dept_name, code=default_dept_code)
+            db.add(dep)
+            try:
+                db.commit()
+                db.refresh(dep)
+            except IntegrityError:
+                # Another worker/process created it concurrently — fetch it.
+                db.rollback()
+                dep = db.query(Department).filter(Department.name == default_dept_name).first()
+
+        # 2) Get-or-create the admin user by its unique email.
+        existing_admin = db.query(User).filter(User.email == admin_email).first()
+        if not existing_admin:
             admin = User(
                 full_name="System Administrator",
                 email=admin_email,
                 hashed_password=hash_password(admin_password),
                 role="admin",
-                department_id=dep.id,
+                department_id=dep.id if dep else None,
             )
             db.add(admin)
-            db.commit()
-            log_action(db, None, "system.seed", f"Seeded initial admin account {admin_email}")
+            try:
+                db.commit()
+                log_action(db, None, "system.seed", f"Seeded initial admin account {admin_email}")
+            except IntegrityError:
+                db.rollback()
+                logger.info("Admin user already existed (created concurrently); skipping seed insert.")
+    except Exception as exc:  # noqa: BLE001 - never let seeding crash startup
+        db.rollback()
+        logger.warning("Startup seeding skipped due to error: %s", exc)
     finally:
         db.close()
 
@@ -564,9 +611,15 @@ def list_departments(db: Session = Depends(get_db), user: User = Depends(get_cur
 def create_department(payload: DepartmentIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
     if db.query(Department).filter(Department.code == payload.code).first():
         raise HTTPException(status_code=400, detail="Department code already exists")
+    if db.query(Department).filter(Department.name == payload.name).first():
+        raise HTTPException(status_code=400, detail="Department name already exists")
     dep = Department(**payload.dict())
     db.add(dep)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Department name or code already exists")
     db.refresh(dep)
     log_action(db, admin.id, "department.create", dep.name)
     return dep
