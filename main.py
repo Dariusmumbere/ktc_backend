@@ -870,7 +870,12 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
             acc = AccountabilityRecord(requisition_id=r.id, status="pending")
             db.add(acc)
             notify_role(db, "auditor", f"Requisition {r.ref_no} approved - accountability documents required", "accountability_pending", r.id)
-            notify(db, r.requester_id, f"Your requisition {r.ref_no} has been fully approved", "approval_completed", r.id)
+            notify(
+                db, r.requester_id,
+                f"Your requisition {r.ref_no} has been fully approved. Please upload the accountability "
+                f"documents (payment voucher, receipts, attendance sheets, etc.) for this requisition.",
+                "accountability_pending", r.id
+            )
         else:
             r.current_stage = nxt
             notify_role(db, nxt, f"Requisition {r.ref_no} awaiting your approval", "approval_request", r.id)
@@ -913,6 +918,27 @@ def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile 
     r = db.query(Requisition).filter(Requisition.id == req_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Requisition not found")
+
+    # Accountability documents can only be attached once the requisition has
+    # cleared full approval (i.e. an AccountabilityRecord exists for it), and
+    # only by the staff member/project officer responsible for the requisition
+    # (or an administrator). This matches the intended workflow: the auditor
+    # reviews what has been uploaded, they do not upload on the requester's
+    # behalf.
+    if not r.accountability:
+        raise HTTPException(
+            status_code=400,
+            detail="This requisition is not yet awaiting accountability documents. "
+                   "It must be fully approved before documents can be uploaded."
+        )
+    if user.id != r.requester_id and user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only the original requester or an administrator can upload accountability documents for this requisition"
+        )
+    if r.accountability.status == "verified":
+        raise HTTPException(status_code=400, detail="This requisition's accountability has already been verified")
+
     allowed_ext = {".pdf", ".docx", ".jpg", ".jpeg", ".png"}
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_ext:
@@ -924,8 +950,15 @@ def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile 
     doc = Document(requisition_id=r.id, filename=file.filename, stored_path=stored_path,
                     doc_type=doc_type, uploaded_by=user.id)
     db.add(doc)
+
+    # If a previous auditor review had flagged this requisition, a fresh
+    # upload puts it back into "pending" so the auditor knows to re-review it.
+    if r.accountability.status == "flagged":
+        r.accountability.status = "pending"
+
     db.commit()
     log_action(db, user.id, "document.upload", f"{file.filename} on {r.ref_no}")
+    notify_role(db, "auditor", f"New accountability document uploaded for {r.ref_no}", "accountability_pending", r.id)
     return {"id": doc.id, "filename": doc.filename, "doc_type": doc.doc_type, "url": f"/files/{stored_name}"}
 
 
@@ -945,6 +978,14 @@ def update_accountability(req_id: int, payload: AccountabilityIn,
         r.status = "accounted"
     db.commit()
     log_action(db, user.id, "accountability.update", f"{r.ref_no} -> {payload.status}")
+    if payload.status == "flagged":
+        notify(
+            db, r.requester_id,
+            f"Accountability documents for {r.ref_no} were flagged: {payload.remarks or 'see remarks'}",
+            "rejection", r.id
+        )
+    elif payload.status == "verified":
+        notify(db, r.requester_id, f"Accountability for {r.ref_no} has been verified", "approval_completed", r.id)
     return requisition_to_dict(r)
 
 
