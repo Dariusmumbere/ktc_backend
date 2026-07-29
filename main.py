@@ -1002,8 +1002,31 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     errors: List[str] = []
 
     def _num(v):
+        """
+        Parse a numeric value from an Excel cell. Handles:
+          - actual numeric cells (int/float) from openpyxl
+          - text cells with thousands separators, e.g. "100,000"
+          - text cells with stray currency labels/whitespace, e.g. "UGX 1,200,000 "
+          - empty/None cells -> 0.0
+
+        FIX: the previous implementation called float(v) directly, which
+        raises ValueError for any text cell containing a comma thousands
+        separator (a very common way Excel stores numbers entered/pasted
+        as text, e.g. "100,000"). That ValueError was silently caught and
+        the field defaulted to 0.0, which is why comma-formatted values
+        were being skipped and coming through as zero.
+        """
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if s == "":
+            return 0.0
+        # Strip thousands separators and common currency noise before parsing.
+        s = s.replace(",", "").replace("UGX", "").replace("Ugx", "").replace("ugx", "").strip()
         try:
-            return float(v) if v not in (None, "") else 0.0
+            return float(s)
         except (TypeError, ValueError):
             return 0.0
 
