@@ -21,6 +21,10 @@ Deploy on Render:
                           app live under their own "ktc-documents/" prefix so
                           nothing collides.
 
+    NOTE: the Excel import feature (see /api/budget-codes/import below) needs
+    the "openpyxl" package. Add it to requirements.txt:
+        openpyxl>=3.1
+
 If DATABASE_URL is not set, the app falls back to a local SQLite file (ktc.db)
 so it can be run and demoed immediately.
 
@@ -33,15 +37,23 @@ like the storage approach used in our other production apps.
 
 Work plan / budget code structure:
 Each budget code (row in the Work Plan & Budget table) follows the Council's
-official work-plan layout:
-    Department, Programme, Sub Programme, Budget Output, Indicator,
-    Baseline, Target, Q1, Q2, Q3, Q4, Revenue Source
+official work-plan / budget estimates layout, captured on the "New Budget
+Estimates Data Entry Form":
+    Department, Service Area, Programme, Sub Programme, Budget Output Code,
+    Budget Output Description, PIAP Output Description, PIAP Output
+    Indicator, Unit of Measure, Baseline Value, Planned Target, Actual
+    Output, Q1 (UGX), Q2 (UGX), Q3 (UGX), Q4 (UGX), Total Budget (UGX),
+    Funding Source, Responsible Party
 Q1-Q4 are the quarterly planned amounts (UGX) for the budget output; the
-total allocated amount for a budget code is simply the sum of Q1-Q4 and is
-computed automatically rather than entered separately.
+Total Budget for a budget code is simply the sum of Q1-Q4 and is computed
+automatically rather than entered separately. Budget estimate rows can also
+be bulk-imported from an Excel (.xlsx) workbook via
+POST /api/budget-codes/import so a user can prepare the data offline and
+have it populate the system automatically.
 """
 
 import os
+import io
 import uuid
 import logging
 import datetime as dt
@@ -151,6 +163,11 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Position (job title) is a free-text field filled in manually by the
+    # administrator when creating the account (e.g. "Senior Accountant",
+    # "Community Development Officer") — it is not tied to a fixed list.
+    position = Column(String(150), nullable=True)
+    telephone = Column(String(40), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -170,28 +187,28 @@ class WorkPlan(Base):
 
 class BudgetCode(Base):
     """
-    A single row of the Council's Work Plan & Budget table:
-    Department | Programme | Sub Programme | Budget Output | Indicator |
-    Baseline | Target | Q1 | Q2 | Q3 | Q4 | Revenue Source
-
-    `code` and `unit_of_measure` are kept as internal reference fields
-    (budget output code, unit of measure) even though they are not columns
-    in the Council's printed work-plan layout — they are used elsewhere in
-    the system (requisition selection, activity linkage) and are still
-    returned by the API.
+    A single row of the Council's "New Budget Estimates Data Entry Form":
+    Department | Service Area | Programme | Sub Programme | Budget Output
+    Code | Budget Output Description | PIAP Output Description | PIAP
+    Output Indicator | Unit of Measure | Baseline Value | Planned Target |
+    Actual Output | Q1 | Q2 | Q3 | Q4 | Total Budget | Funding Source |
+    Responsible Party
     """
     __tablename__ = "budget_codes"
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
-    code = Column(String(30), nullable=False)
-    output_description = Column(String(255), nullable=False)   # Budget Output
+    service_area = Column(String(150))
+    code = Column(String(30), nullable=False)                  # Budget Output Code
+    output_description = Column(String(255), nullable=False)   # Budget Output Description
     programme = Column(String(150))
     sub_programme = Column(String(150))
-    indicator = Column(String(255))
+    piap_output_description = Column(String(255))
+    piap_output_indicator = Column(String(255))
     unit_of_measure = Column(String(50))
     baseline_value = Column(Float, default=0)
     planned_target = Column(Float, default=0)
+    actual_output = Column(String(255))
     # Quarterly planned amounts (UGX) — these replace a single manually
     # entered "allocated amount"; the total is derived from their sum.
     q1_amount = Column(Float, default=0)
@@ -199,6 +216,7 @@ class BudgetCode(Base):
     q3_amount = Column(Float, default=0)
     q4_amount = Column(Float, default=0)
     funding_source = Column(String(100), default="Local Revenue")  # Revenue Source
+    responsible_party = Column(String(150))
 
     work_plan = relationship("WorkPlan", back_populates="budget_codes")
     department = relationship("Department", back_populates="budget_codes")
@@ -330,18 +348,27 @@ Base.metadata.create_all(bind=engine)
 
 def _run_lightweight_migrations():
     """
-    Add newly introduced BudgetCode columns (indicator, q1_amount..q4_amount)
-    to an already-existing database without requiring a full migration tool.
-    Safe to run on every startup: each ALTER is wrapped so a column that
-    already exists (or a backend, like SQLite, that behaves differently) never
-    crashes the app.
+    Add newly introduced columns to an already-existing database without
+    requiring a full migration tool. Safe to run on every startup: each
+    ALTER is wrapped so a column that already exists (or a backend, like
+    SQLite, that behaves differently) never crashes the app.
     """
     statements = [
+        # BudgetCode — earlier additions
         "ALTER TABLE budget_codes ADD COLUMN indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN q1_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q2_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q3_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q4_amount FLOAT DEFAULT 0",
+        # BudgetCode — "New Budget Estimates Data Entry Form" fields
+        "ALTER TABLE budget_codes ADD COLUMN service_area VARCHAR(150)",
+        "ALTER TABLE budget_codes ADD COLUMN piap_output_description VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
+        # Users — Position & Telephone
+        "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
+        "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -350,6 +377,20 @@ def _run_lightweight_migrations():
                 conn.commit()
             except Exception:
                 conn.rollback()  # column already exists (or backend quirk) — ignore
+
+    # One-time backfill: if a legacy row has data in the old "indicator"
+    # column but nothing in the new "piap_output_indicator" column, copy it
+    # across so nothing already entered is lost.
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "UPDATE budget_codes SET piap_output_indicator = indicator "
+                "WHERE (piap_output_indicator IS NULL OR piap_output_indicator = '') "
+                "AND indicator IS NOT NULL AND indicator <> ''"
+            )
+            conn.commit()
+    except Exception:
+        pass
 
 
 _run_lightweight_migrations()
@@ -369,6 +410,10 @@ class Token(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    # The role the person selected on the "Signing in as" dropdown. Optional
+    # for backwards compatibility (e.g. API clients that don't send it), but
+    # when present it must match the account's actual role.
+    role: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -377,6 +422,8 @@ class UserOut(BaseModel):
     email: str
     role: str
     department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
     is_active: bool
 
     class Config:
@@ -389,6 +436,8 @@ class UserCreate(BaseModel):
     password: str
     role: str
     department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
 
 
 class DepartmentIn(BaseModel):
@@ -417,19 +466,23 @@ class WorkPlanOut(WorkPlanIn):
 class BudgetCodeIn(BaseModel):
     work_plan_id: int
     department_id: int
+    service_area: Optional[str] = None
     code: str
     output_description: str
     programme: Optional[str] = None
     sub_programme: Optional[str] = None
-    indicator: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: float = 0
     planned_target: float = 0
+    actual_output: Optional[str] = None
     q1_amount: float = 0
     q2_amount: float = 0
     q3_amount: float = 0
     q4_amount: float = 0
     funding_source: str = "Local Revenue"
+    responsible_party: Optional[str] = None
 
 
 class BudgetCodeOut(BaseModel):
@@ -437,25 +490,35 @@ class BudgetCodeOut(BaseModel):
     work_plan_id: int
     department_id: int
     department_name: Optional[str] = None
+    service_area: Optional[str] = None
     code: str
     output_description: str
     programme: Optional[str] = None
     sub_programme: Optional[str] = None
-    indicator: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: float
     planned_target: float
+    actual_output: Optional[str] = None
     q1_amount: float
     q2_amount: float
     q3_amount: float
     q4_amount: float
     funding_source: str
+    responsible_party: Optional[str] = None
     allocated_amount: float
     committed_amount: float
     available_balance: float
 
     class Config:
         from_attributes = True
+
+
+class BudgetCodeImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: List[str] = []
 
 
 class ActivityIn(BaseModel):
@@ -662,6 +725,7 @@ def seed_data():
                 email=admin_email,
                 hashed_password=hash_password(admin_password),
                 role="admin",
+                position="System Administrator",
                 department_id=dep.id if dep else None,
             )
             db.add(admin)
@@ -687,6 +751,15 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been deactivated")
+    # If the person selected a role on the "Signing in as" dropdown, make
+    # sure it actually matches the account's role. This catches the common
+    # mistake of, say, a Head of Department selecting "Staff Member" and
+    # then being confused about missing approval permissions.
+    if payload.role and payload.role != user.role:
+        raise HTTPException(
+            status_code=401,
+            detail="The role you selected does not match this account. Please choose the correct role and try again."
+        )
     token = create_access_token({"sub": str(user.id), "role": user.role})
     log_action(db, user.id, "auth.login", f"{user.email} logged in")
     return Token(access_token=token, role=user.role, full_name=user.full_name, user_id=user.id)
@@ -716,6 +789,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User 
         hashed_password=hash_password(payload.password),
         role=payload.role,
         department_id=payload.department_id,
+        position=payload.position,
+        telephone=payload.telephone,
     )
     db.add(new_user)
     db.commit()
@@ -784,12 +859,18 @@ def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=bc.department.name if bc.department else None,
+        service_area=bc.service_area,
         code=bc.code, output_description=bc.output_description, programme=bc.programme,
-        sub_programme=bc.sub_programme, indicator=bc.indicator, unit_of_measure=bc.unit_of_measure,
+        sub_programme=bc.sub_programme,
+        piap_output_description=bc.piap_output_description,
+        piap_output_indicator=bc.piap_output_indicator,
+        unit_of_measure=bc.unit_of_measure,
         baseline_value=bc.baseline_value, planned_target=bc.planned_target,
+        actual_output=bc.actual_output,
         q1_amount=bc.q1_amount or 0, q2_amount=bc.q2_amount or 0,
         q3_amount=bc.q3_amount or 0, q4_amount=bc.q4_amount or 0,
         funding_source=bc.funding_source,
+        responsible_party=bc.responsible_party,
         allocated_amount=bc.allocated_amount, committed_amount=bc.committed_amount,
         available_balance=bc.available_balance,
     )
@@ -818,6 +899,166 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
     db.refresh(bc)
     log_action(db, admin.id, "budget_code.create", f"{bc.code} - {bc.output_description}")
     return budget_code_to_out(bc)
+
+
+# ---- Excel import ----------------------------------------------------------
+# Expected column headers (case-insensitive, order-independent) on the first
+# worksheet, row 1:
+#   Department, Service Area, Programme, Sub Programme, Budget Output Code,
+#   Budget Output Description, PIAP Output Description, PIAP Output
+#   Indicator, Unit of Measure, Baseline Value, Planned Target, Actual
+#   Output, Q1 (UGX), Q2 (UGX), Q3 (UGX), Q4 (UGX), Funding Source,
+#   Responsible Party
+# "Department" is matched against existing department names (case
+# insensitive); a department that doesn't exist yet is skipped with an
+# error message rather than silently dropped, so the user knows to create
+# it (or fix a typo) first. "Total Budget (UGX)" is ignored if present,
+# since it is always recomputed as Q1+Q2+Q3+Q4.
+
+_IMPORT_COLUMN_ALIASES = {
+    "department": "department",
+    "service area": "service_area",
+    "programme": "programme",
+    "program": "programme",
+    "sub programme": "sub_programme",
+    "sub-programme": "sub_programme",
+    "sub program": "sub_programme",
+    "budget output code": "code",
+    "budget output": "output_description",
+    "budget output description": "output_description",
+    "piap output description": "piap_output_description",
+    "piap output indicator": "piap_output_indicator",
+    "unit of measure": "unit_of_measure",
+    "baseline value": "baseline_value",
+    "baseline": "baseline_value",
+    "planned target": "planned_target",
+    "target": "planned_target",
+    "actual output": "actual_output",
+    "q1(ugx)": "q1_amount", "q1 (ugx)": "q1_amount", "q1": "q1_amount",
+    "q2(ugx)": "q2_amount", "q2 (ugx)": "q2_amount", "q2": "q2_amount",
+    "q3(ugx)": "q3_amount", "q3 (ugx)": "q3_amount", "q3": "q3_amount",
+    "q4(ugx)": "q4_amount", "q4 (ugx)": "q4_amount", "q4": "q4_amount",
+    "funding source": "funding_source",
+    "revenue source": "funding_source",
+    "responsible party": "responsible_party",
+}
+
+
+@app.post("/api/budget-codes/import", response_model=BudgetCodeImportResult)
+async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
+                               db: Session = Depends(get_db),
+                               admin: User = Depends(require_roles("admin"))):
+    """
+    Bulk-create Budget Estimates rows from an uploaded Excel workbook so a
+    user can prepare the "New Budget Estimates Data Entry Form" data offline
+    (e.g. in the Council's existing spreadsheet template) and have every row
+    populate directly into the system, instead of typing each one in
+    manually.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed."
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
+
+    header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
+    col_map = {}  # column index -> field name
+    for idx, h in enumerate(header):
+        field = _IMPORT_COLUMN_ALIASES.get(h)
+        if field:
+            col_map[idx] = field
+
+    if "output_description" not in col_map.values() or "code" not in col_map.values():
+        raise HTTPException(
+            status_code=400,
+            detail="The workbook must at least include 'Budget Output Code' and 'Budget Output Description' columns"
+        )
+
+    departments_by_name = {d.name.strip().lower(): d for d in db.query(Department).all()}
+
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _text(v):
+        return str(v).strip() if v is not None else None
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue  # blank row
+        data = {}
+        for idx, field in col_map.items():
+            data[field] = row[idx] if idx < len(row) else None
+
+        dept_name = _text(data.get("department"))
+        dept = departments_by_name.get(dept_name.lower()) if dept_name else None
+        if not dept:
+            skipped += 1
+            errors.append(f"Row {row_idx}: department '{dept_name or ''}' was not found — skipped")
+            continue
+
+        code = _text(data.get("code"))
+        output_description = _text(data.get("output_description"))
+        if not code or not output_description:
+            skipped += 1
+            errors.append(f"Row {row_idx}: missing Budget Output Code or Description — skipped")
+            continue
+
+        bc = BudgetCode(
+            work_plan_id=work_plan_id,
+            department_id=dept.id,
+            service_area=_text(data.get("service_area")),
+            code=code,
+            output_description=output_description,
+            programme=_text(data.get("programme")),
+            sub_programme=_text(data.get("sub_programme")),
+            piap_output_description=_text(data.get("piap_output_description")),
+            piap_output_indicator=_text(data.get("piap_output_indicator")),
+            unit_of_measure=_text(data.get("unit_of_measure")),
+            baseline_value=_num(data.get("baseline_value")),
+            planned_target=_num(data.get("planned_target")),
+            actual_output=_text(data.get("actual_output")),
+            q1_amount=_num(data.get("q1_amount")),
+            q2_amount=_num(data.get("q2_amount")),
+            q3_amount=_num(data.get("q3_amount")),
+            q4_amount=_num(data.get("q4_amount")),
+            funding_source=_text(data.get("funding_source")) or "Local Revenue",
+            responsible_party=_text(data.get("responsible_party")),
+        )
+        db.add(bc)
+        created += 1
+
+    db.commit()
+    log_action(db, admin.id, "budget_code.import",
+               f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)")
+    return BudgetCodeImportResult(created=created, skipped=skipped, errors=errors[:20])
 
 
 # ---------------------------- Activities ------------------------------------
