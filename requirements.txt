@@ -10,3 +10,4 @@ python-multipart==0.0.20
 boto3
 botocore
 requests
+openpyxl
