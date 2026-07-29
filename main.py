@@ -1,62 +1,10 @@
-"""
-Karugutu Town Council Integrated Public Financial Management System (KTC-IPFMS)
-Backend — single-file FastAPI application.
-
-Run locally:
-    pip install -r requirements.txt
-    uvicorn main:app --reload
-
-Deploy on Render:
-    - Build command:  pip install -r requirements.txt
-    - Start command:  uvicorn main:app --host 0.0.0.0 --port $PORT
-    - Environment variables:
-        DATABASE_URL   -> your Render PostgreSQL "Internal Database URL"
-        JWT_SECRET     -> any long random string
-        CORS_ORIGINS   -> e.g. https://your-frontend.onrender.com,http://localhost:5500
-        ADMIN_EMAIL / ADMIN_PASSWORD -> optional, seeds the first System Administrator
-        B2_KEY_ID / B2_APPLICATION_KEY / B2_BUCKET_NAME / B2_ENDPOINT_URL
-                       -> optional overrides for Backblaze B2 object storage.
-                          Defaults point at the same bucket used by our other
-                          apps (e.g. ScienceTech Academy); documents for this
-                          app live under their own "ktc-documents/" prefix so
-                          nothing collides.
-
-    NOTE: the Excel import feature (see /api/budget-codes/import below) needs
-    the "openpyxl" package. Add it to requirements.txt:
-        openpyxl>=3.1
-
-If DATABASE_URL is not set, the app falls back to a local SQLite file (ktc.db)
-so it can be run and demoed immediately.
-
-Accountability documents (payment vouchers, receipts, attendance sheets, etc.)
-are stored in Backblaze B2 rather than on local disk — local disk storage
-does not survive redeploys on most hosting platforms (e.g. Render), so any
-uploaded document would silently disappear after the next deploy. Using B2
-means uploads persist independently of the app server's lifecycle, exactly
-like the storage approach used in our other production apps.
-
-Work plan / budget code structure:
-Each budget code (row in the Work Plan & Budget table) follows the Council's
-official work-plan / budget estimates layout, captured on the "New Budget
-Estimates Data Entry Form":
-    Department, Service Area, Programme, Sub Programme, Budget Output Code,
-    Budget Output Description, PIAP Output Description, PIAP Output
-    Indicator, Unit of Measure, Baseline Value, Planned Target, Actual
-    Output, Q1 (UGX), Q2 (UGX), Q3 (UGX), Q4 (UGX), Total Budget (UGX),
-    Funding Source, Responsible Party
-Q1-Q4 are the quarterly planned amounts (UGX) for the budget output; the
-Total Budget for a budget code is simply the sum of Q1-Q4 and is computed
-automatically rather than entered separately. Budget estimate rows can also
-be bulk-imported from an Excel (.xlsx) workbook via
-POST /api/budget-codes/import so a user can prepare the data offline and
-have it populate the system automatically.
-"""
-
 import os
 import io
+import re
 import uuid
 import logging
 import datetime as dt
+from decimal import Decimal
 from typing import Optional, List
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query, Request
@@ -943,6 +891,18 @@ _IMPORT_COLUMN_ALIASES = {
     "responsible party": "responsible_party",
 }
 
+# Human-friendly labels used only for error/warning messages surfaced back
+# to the person importing the workbook, so a bad cell can be traced back to
+# exactly which column produced it.
+_NUMERIC_FIELD_LABELS = {
+    "baseline_value": "Baseline Value",
+    "planned_target": "Planned Target",
+    "q1_amount": "Q1 (UGX)",
+    "q2_amount": "Q2 (UGX)",
+    "q3_amount": "Q3 (UGX)",
+    "q4_amount": "Q4 (UGX)",
+}
+
 
 @app.post("/api/budget-codes/import", response_model=BudgetCodeImportResult)
 async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
@@ -1001,34 +961,78 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     skipped = 0
     errors: List[str] = []
 
-    def _num(v):
-        """
-        Parse a numeric value from an Excel cell. Handles:
-          - actual numeric cells (int/float) from openpyxl
-          - text cells with thousands separators, e.g. "100,000"
-          - text cells with stray currency labels/whitespace, e.g. "UGX 1,200,000 "
-          - empty/None cells -> 0.0
+    # --------------------------------------------------------------------
+    # Robust numeric parsing for Excel cells.
+    #
+    # The previous implementation called float(v) directly on text cells,
+    # which raised on the very common case of a comma thousands separator
+    # (e.g. "100,000") and, worse, that failure was swallowed with a bare
+    # except that silently returned 0.0 — so a mistyped or oddly-formatted
+    # cell would import as zero with no indication anything had gone wrong.
+    #
+    # This version:
+    #   1. Handles native numeric cells (int/float/Decimal) from openpyxl
+    #      directly.
+    #   2. Strips a much wider range of "human" number formatting from text
+    #      cells before parsing: comma AND space thousands separators
+    #      (including non-breaking/narrow spaces some copy-pastes leave
+    #      behind), currency labels ("UGX", "Ugx", "USh", "/="), a trailing
+    #      "%" sign, and parenthesised negatives e.g. "(1,200,000)".
+    #   3. Never fails silently: if, after all that, the cell still can't be
+    #      parsed as a number, it is recorded in the row's warning list (and
+    #      therefore in the import result's `errors`) so the admin can see
+    #      exactly which row/column needs fixing, instead of getting a
+    #      quietly-wrong zero in the budget.
+    # --------------------------------------------------------------------
+    _THOUSANDS_SPACE_RE = re.compile(r"(?<=\d)[\s\u00A0\u2009\u202F](?=\d)")
+    _CURRENCY_NOISE = ("UGX", "Ugx", "ugx", "USH", "Ush", "ush", "/=", "=", "%")
 
-        FIX: the previous implementation called float(v) directly, which
-        raises ValueError for any text cell containing a comma thousands
-        separator (a very common way Excel stores numbers entered/pasted
-        as text, e.g. "100,000"). That ValueError was silently caught and
-        the field defaulted to 0.0, which is why comma-formatted values
-        were being skipped and coming through as zero.
-        """
+    def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None):
         if v is None:
             return 0.0
-        if isinstance(v, (int, float)):
+        if isinstance(v, bool):
+            return 0.0
+        if isinstance(v, (int, float, Decimal)):
             return float(v)
-        s = str(v).strip()
+
+        original = str(v)
+        s = original.strip()
         if s == "":
             return 0.0
-        # Strip thousands separators and common currency noise before parsing.
-        s = s.replace(",", "").replace("UGX", "").replace("Ugx", "").replace("ugx", "").strip()
-        try:
-            return float(s)
-        except (TypeError, ValueError):
+
+        negative = False
+        if s.startswith("(") and s.endswith(")"):
+            negative = True
+            s = s[1:-1].strip()
+        elif s.startswith("-"):
+            negative = True
+            s = s[1:].strip()
+
+        # Normalise assorted unicode space characters to plain spaces.
+        s = s.replace("\u00A0", " ").replace("\u2009", " ").replace("\u202F", " ")
+
+        for token in _CURRENCY_NOISE:
+            s = s.replace(token, "")
+        s = s.strip()
+
+        # Remove thousands separators: commas, and spaces sitting between digits.
+        s = s.replace(",", "")
+        s = _THOUSANDS_SPACE_RE.sub("", s)
+        s = s.strip()
+
+        if s == "" or s == "-":
             return 0.0
+
+        try:
+            result = float(s)
+        except (TypeError, ValueError):
+            if row_warnings is not None:
+                label = _NUMERIC_FIELD_LABELS.get(field_key, field_key or "value")
+                loc = f"Row {row_idx}: " if row_idx else ""
+                row_warnings.append(f"{loc}could not read '{original.strip()}' as a number for {label} — treated as 0")
+            return 0.0
+
+        return -result if negative else result
 
     def _text(v):
         return str(v).strip() if v is not None else None
@@ -1054,6 +1058,8 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             errors.append(f"Row {row_idx}: missing Budget Output Code or Description — skipped")
             continue
 
+        row_warnings: List[str] = []
+
         bc = BudgetCode(
             work_plan_id=work_plan_id,
             department_id=dept.id,
@@ -1065,18 +1071,19 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             piap_output_description=_text(data.get("piap_output_description")),
             piap_output_indicator=_text(data.get("piap_output_indicator")),
             unit_of_measure=_text(data.get("unit_of_measure")),
-            baseline_value=_num(data.get("baseline_value")),
-            planned_target=_num(data.get("planned_target")),
+            baseline_value=_num(data.get("baseline_value"), "baseline_value", row_idx, row_warnings),
+            planned_target=_num(data.get("planned_target"), "planned_target", row_idx, row_warnings),
             actual_output=_text(data.get("actual_output")),
-            q1_amount=_num(data.get("q1_amount")),
-            q2_amount=_num(data.get("q2_amount")),
-            q3_amount=_num(data.get("q3_amount")),
-            q4_amount=_num(data.get("q4_amount")),
+            q1_amount=_num(data.get("q1_amount"), "q1_amount", row_idx, row_warnings),
+            q2_amount=_num(data.get("q2_amount"), "q2_amount", row_idx, row_warnings),
+            q3_amount=_num(data.get("q3_amount"), "q3_amount", row_idx, row_warnings),
+            q4_amount=_num(data.get("q4_amount"), "q4_amount", row_idx, row_warnings),
             funding_source=_text(data.get("funding_source")) or "Local Revenue",
             responsible_party=_text(data.get("responsible_party")),
         )
         db.add(bc)
         created += 1
+        errors.extend(row_warnings)
 
     db.commit()
     log_action(db, admin.id, "budget_code.import",
