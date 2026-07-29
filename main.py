@@ -816,6 +816,8 @@ def requisition_to_dict(r: Requisition) -> dict:
         "accountability": {
             "status": r.accountability.status if r.accountability else None,
             "remarks": r.accountability.remarks if r.accountability else None,
+            "has_voucher": any(d.doc_type == "voucher" for d in r.documents),
+            "has_documents": len(r.documents) > 0,
         } if r.accountability else None,
     }
 
@@ -1133,6 +1135,25 @@ def update_accountability(req_id: int, payload: AccountabilityIn,
     r = db.query(Requisition).filter(Requisition.id == req_id).first()
     if not r or not r.accountability:
         raise HTTPException(status_code=404, detail="No accountability record found for this requisition")
+
+    # Hard server-side gate: a requisition stays on the internal auditor's
+    # wall until every required accountability document — including the
+    # Payment Voucher — has actually been uploaded. The auditor cannot mark
+    # a requisition "verified" without documents attached, regardless of
+    # what the client sends.
+    if payload.status == "verified":
+        if not r.documents:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot verify: no accountability documents have been uploaded for this requisition yet."
+            )
+        has_voucher = any(d.doc_type == "voucher" for d in r.documents)
+        if not has_voucher:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot verify: a Payment Voucher must be uploaded for this requisition before it can be verified."
+            )
+
     r.accountability.status = payload.status
     r.accountability.remarks = payload.remarks
     r.accountability.auditor_id = user.id
