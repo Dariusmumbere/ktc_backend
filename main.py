@@ -30,6 +30,15 @@ does not survive redeploys on most hosting platforms (e.g. Render), so any
 uploaded document would silently disappear after the next deploy. Using B2
 means uploads persist independently of the app server's lifecycle, exactly
 like the storage approach used in our other production apps.
+
+Work plan / budget code structure:
+Each budget code (row in the Work Plan & Budget table) follows the Council's
+official work-plan layout:
+    Department, Programme, Sub Programme, Budget Output, Indicator,
+    Baseline, Target, Q1, Q2, Q3, Q4, Revenue Source
+Q1-Q4 are the quarterly planned amounts (UGX) for the budget output; the
+total allocated amount for a budget code is simply the sum of Q1-Q4 and is
+computed automatically rather than entered separately.
 """
 
 import os
@@ -160,23 +169,44 @@ class WorkPlan(Base):
 
 
 class BudgetCode(Base):
+    """
+    A single row of the Council's Work Plan & Budget table:
+    Department | Programme | Sub Programme | Budget Output | Indicator |
+    Baseline | Target | Q1 | Q2 | Q3 | Q4 | Revenue Source
+
+    `code` and `unit_of_measure` are kept as internal reference fields
+    (budget output code, unit of measure) even though they are not columns
+    in the Council's printed work-plan layout — they are used elsewhere in
+    the system (requisition selection, activity linkage) and are still
+    returned by the API.
+    """
     __tablename__ = "budget_codes"
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     code = Column(String(30), nullable=False)
-    output_description = Column(String(255), nullable=False)
+    output_description = Column(String(255), nullable=False)   # Budget Output
     programme = Column(String(150))
     sub_programme = Column(String(150))
+    indicator = Column(String(255))
     unit_of_measure = Column(String(50))
     baseline_value = Column(Float, default=0)
     planned_target = Column(Float, default=0)
-    allocated_amount = Column(Float, default=0)
-    funding_source = Column(String(100), default="Local Revenue")
+    # Quarterly planned amounts (UGX) — these replace a single manually
+    # entered "allocated amount"; the total is derived from their sum.
+    q1_amount = Column(Float, default=0)
+    q2_amount = Column(Float, default=0)
+    q3_amount = Column(Float, default=0)
+    q4_amount = Column(Float, default=0)
+    funding_source = Column(String(100), default="Local Revenue")  # Revenue Source
 
     work_plan = relationship("WorkPlan", back_populates="budget_codes")
     department = relationship("Department", back_populates="budget_codes")
     activities = relationship("Activity", back_populates="budget_code")
+
+    @property
+    def allocated_amount(self):
+        return (self.q1_amount or 0) + (self.q2_amount or 0) + (self.q3_amount or 0) + (self.q4_amount or 0)
 
     @property
     def committed_amount(self):
@@ -297,6 +327,33 @@ class AuditLog(Base):
 
 Base.metadata.create_all(bind=engine)
 
+
+def _run_lightweight_migrations():
+    """
+    Add newly introduced BudgetCode columns (indicator, q1_amount..q4_amount)
+    to an already-existing database without requiring a full migration tool.
+    Safe to run on every startup: each ALTER is wrapped so a column that
+    already exists (or a backend, like SQLite, that behaves differently) never
+    crashes the app.
+    """
+    statements = [
+        "ALTER TABLE budget_codes ADD COLUMN indicator VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN q1_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q2_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q3_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q4_amount FLOAT DEFAULT 0",
+    ]
+    with engine.connect() as conn:
+        for stmt in statements:
+            try:
+                conn.exec_driver_sql(stmt)
+                conn.commit()
+            except Exception:
+                conn.rollback()  # column already exists (or backend quirk) — ignore
+
+
+_run_lightweight_migrations()
+
 # --------------------------------------------------------------------------
 # Schemas
 # --------------------------------------------------------------------------
@@ -364,10 +421,14 @@ class BudgetCodeIn(BaseModel):
     output_description: str
     programme: Optional[str] = None
     sub_programme: Optional[str] = None
+    indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: float = 0
     planned_target: float = 0
-    allocated_amount: float = 0
+    q1_amount: float = 0
+    q2_amount: float = 0
+    q3_amount: float = 0
+    q4_amount: float = 0
     funding_source: str = "Local Revenue"
 
 
@@ -380,11 +441,16 @@ class BudgetCodeOut(BaseModel):
     output_description: str
     programme: Optional[str] = None
     sub_programme: Optional[str] = None
+    indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: float
     planned_target: float
-    allocated_amount: float
+    q1_amount: float
+    q2_amount: float
+    q3_amount: float
+    q4_amount: float
     funding_source: str
+    allocated_amount: float
     committed_amount: float
     available_balance: float
 
@@ -719,10 +785,13 @@ def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=bc.department.name if bc.department else None,
         code=bc.code, output_description=bc.output_description, programme=bc.programme,
-        sub_programme=bc.sub_programme, unit_of_measure=bc.unit_of_measure,
+        sub_programme=bc.sub_programme, indicator=bc.indicator, unit_of_measure=bc.unit_of_measure,
         baseline_value=bc.baseline_value, planned_target=bc.planned_target,
-        allocated_amount=bc.allocated_amount, funding_source=bc.funding_source,
-        committed_amount=bc.committed_amount, available_balance=bc.available_balance,
+        q1_amount=bc.q1_amount or 0, q2_amount=bc.q2_amount or 0,
+        q3_amount=bc.q3_amount or 0, q4_amount=bc.q4_amount or 0,
+        funding_source=bc.funding_source,
+        allocated_amount=bc.allocated_amount, committed_amount=bc.committed_amount,
+        available_balance=bc.available_balance,
     )
 
 
@@ -1225,9 +1294,8 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
     approved = base.filter(Requisition.status.in_(["approved", "accounted"])).count()
     rejected = base.filter(Requisition.status == "rejected").count()
 
-    total_budget = db.query(BudgetCode).with_entities(BudgetCode.allocated_amount).all()
-    total_budget_sum = sum(v[0] for v in total_budget)
     all_codes = db.query(BudgetCode).all()
+    total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
     utilized = sum(bc.committed_amount for bc in all_codes)
 
     recent = base.order_by(Requisition.created_at.desc()).limit(6).all()
