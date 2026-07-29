@@ -14,22 +14,34 @@ Deploy on Render:
         JWT_SECRET     -> any long random string
         CORS_ORIGINS   -> e.g. https://your-frontend.onrender.com,http://localhost:5500
         ADMIN_EMAIL / ADMIN_PASSWORD -> optional, seeds the first System Administrator
+        B2_KEY_ID / B2_APPLICATION_KEY / B2_BUCKET_NAME / B2_ENDPOINT_URL
+                       -> optional overrides for Backblaze B2 object storage.
+                          Defaults point at the same bucket used by our other
+                          apps (e.g. ScienceTech Academy); documents for this
+                          app live under their own "ktc-documents/" prefix so
+                          nothing collides.
 
 If DATABASE_URL is not set, the app falls back to a local SQLite file (ktc.db)
 so it can be run and demoed immediately.
+
+Accountability documents (payment vouchers, receipts, attendance sheets, etc.)
+are stored in Backblaze B2 rather than on local disk — local disk storage
+does not survive redeploys on most hosting platforms (e.g. Render), so any
+uploaded document would silently disappear after the next deploy. Using B2
+means uploads persist independently of the app server's lifecycle, exactly
+like the storage approach used in our other production apps.
 """
 
 import os
 import uuid
-import shutil
 import logging
 import datetime as dt
 from typing import Optional, List
 
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from sqlalchemy import (
@@ -41,6 +53,9 @@ from sqlalchemy.exc import IntegrityError
 
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+
+import boto3
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger("ktc_ipfms")
 logging.basicConfig(level=logging.INFO)
@@ -62,8 +77,27 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret-in-production")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
 
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# --------------------------------------------------------------------------
+# Backblaze B2 (S3-compatible) object storage
+# --------------------------------------------------------------------------
+# Same bucket / endpoint / credential pattern used across our other
+# applications (e.g. ScienceTech Academy). Accountability documents for
+# KTC-IPFMS are stored in that same bucket, under their own folder prefix
+# ("ktc-documents/<requisition_id>/<uuid>.<ext>") so they never collide with
+# course images, avatars, certificates, etc. from other apps sharing the
+# bucket.
+B2_BUCKET_NAME = os.getenv("B2_BUCKET_NAME", "uploads-dir")
+B2_ENDPOINT_URL = os.getenv("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
+B2_KEY_ID = os.getenv("B2_KEY_ID", "0055ca7845641d30000000002")
+B2_APPLICATION_KEY = os.getenv("B2_APPLICATION_KEY", "K005NNeGM9r28ujQ3jvNEQy2zUiu0TI")
+B2_DOCUMENTS_FOLDER = "ktc-documents"
+
+b2_client = boto3.client(
+    "s3",
+    endpoint_url=B2_ENDPOINT_URL,
+    aws_access_key_id=B2_KEY_ID,
+    aws_secret_access_key=B2_APPLICATION_KEY,
+)
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 origins = ["*"] if CORS_ORIGINS.strip() == "*" else [o.strip() for o in CORS_ORIGINS.split(",")]
@@ -231,6 +265,8 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
+    # stored_path now holds the Backblaze B2 *object key* (e.g.
+    # "ktc-documents/42/9f3c1a2b....pdf"), not a local filesystem path.
     stored_path = Column(String(500), nullable=False)
     doc_type = Column(String(50), default="supporting")  # supporting / receipt / voucher / attendance / other
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -461,6 +497,42 @@ def notify_role(db: Session, role: str, message: str, category: str = "info", re
 
 
 # --------------------------------------------------------------------------
+# Backblaze B2 storage helpers
+# --------------------------------------------------------------------------
+# Mirrors the upload/delete pattern used in our other apps: object keys are
+# namespaced under a folder prefix, content is streamed straight into the
+# bucket, and errors are surfaced as clean HTTP 500s rather than raw
+# botocore exceptions.
+
+async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
+    """Upload an accountability document to Backblaze B2 and return its object key."""
+    try:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        key = f"{B2_DOCUMENTS_FOLDER}/{requisition_id}/{uuid.uuid4().hex}{ext}"
+        file_content = await file.read()
+        b2_client.put_object(
+            Bucket=B2_BUCKET_NAME,
+            Key=key,
+            Body=file_content,
+            ContentType=file.content_type or "application/octet-stream",
+        )
+        logger.info(f"Document uploaded to B2: {key}")
+        return key
+    except Exception as e:
+        logger.error(f"Error uploading document to B2: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+
+def delete_document_from_b2(key: str):
+    try:
+        b2_client.delete_object(Bucket=B2_BUCKET_NAME, Key=key)
+        logger.info(f"Document deleted from B2: {key}")
+    except Exception as e:
+        # Never let a storage cleanup failure break the calling request.
+        logger.warning(f"Error deleting document from B2: {e}")
+
+
+# --------------------------------------------------------------------------
 # App
 # --------------------------------------------------------------------------
 
@@ -473,8 +545,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/files", StaticFiles(directory=UPLOAD_DIR), name="files")
 
 
 @app.on_event("startup")
@@ -736,7 +806,11 @@ def requisition_to_dict(r: Requisition) -> dict:
             } for a in r.approvals
         ],
         "documents": [
-            {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{os.path.basename(d.stored_path)}"}
+            # d.stored_path is the Backblaze B2 object key. The /files
+            # route below streams the object straight out of B2, so the
+            # frontend's existing "${API_BASE}${d.url}" link pattern keeps
+            # working unchanged.
+            {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{d.stored_path}"}
             for d in r.documents
         ],
         "accountability": {
@@ -865,6 +939,12 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
         r.status = STAGE_STATUS[stage]
         nxt = NEXT_STAGE[stage]
         if nxt == "done":
+            # Fully approved: the requisition now sits on the internal
+            # auditor's wall pending accountability documents (this is
+            # exactly the "pending until all accountability documents are
+            # uploaded, including the payment voucher" behaviour) — an
+            # AccountabilityRecord is created in "pending" status and only
+            # moves to "verified" once the auditor reviews the uploads.
             r.current_stage = "done"
             r.status = "approved"
             acc = AccountabilityRecord(requisition_id=r.id, status="pending")
@@ -910,11 +990,11 @@ def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_cu
     return [requisition_to_dict(r) for r in reqs]
 
 
-# ---------------------------- Documents -------------------------------------
+# ---------------------------- Documents (Backblaze B2) -----------------------
 
 @app.post("/api/requisitions/{req_id}/documents")
-def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile = File(...),
-                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile = File(...),
+                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     r = db.query(Requisition).filter(Requisition.id == req_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Requisition not found")
@@ -924,7 +1004,9 @@ def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile 
     # only by the staff member/project officer responsible for the requisition
     # (or an administrator). This matches the intended workflow: the auditor
     # reviews what has been uploaded, they do not upload on the requester's
-    # behalf.
+    # behalf. The requisition stays on the internal auditor's wall until
+    # every required accountability document — including the payment
+    # voucher — has been uploaded and the auditor marks it verified.
     if not r.accountability:
         raise HTTPException(
             status_code=400,
@@ -940,14 +1022,13 @@ def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile 
         raise HTTPException(status_code=400, detail="This requisition's accountability has already been verified")
 
     allowed_ext = {".pdf", ".docx", ".jpg", ".jpeg", ".png"}
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed_ext:
         raise HTTPException(status_code=400, detail="Only PDF, DOCX, JPG and PNG files are allowed")
-    stored_name = f"{uuid.uuid4().hex}{ext}"
-    stored_path = os.path.join(UPLOAD_DIR, stored_name)
-    with open(stored_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    doc = Document(requisition_id=r.id, filename=file.filename, stored_path=stored_path,
+
+    object_key = await upload_document_to_b2(file, r.id)
+
+    doc = Document(requisition_id=r.id, filename=file.filename, stored_path=object_key,
                     doc_type=doc_type, uploaded_by=user.id)
     db.add(doc)
 
@@ -959,7 +1040,89 @@ def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile 
     db.commit()
     log_action(db, user.id, "document.upload", f"{file.filename} on {r.ref_no}")
     notify_role(db, "auditor", f"New accountability document uploaded for {r.ref_no}", "accountability_pending", r.id)
-    return {"id": doc.id, "filename": doc.filename, "doc_type": doc.doc_type, "url": f"/files/{stored_name}"}
+    return {"id": doc.id, "filename": doc.filename, "doc_type": doc.doc_type, "url": f"/files/{object_key}"}
+
+
+@app.get("/files/{filename:path}")
+async def stream_document(filename: str, request: Request, db: Session = Depends(get_db)):
+    """
+    Stream an accountability document straight out of Backblaze B2.
+
+    Documents are addressed by their B2 object key (e.g.
+    "ktc-documents/42/9f3c1a2b....pdf") and proxied here rather than served
+    from local disk, so uploads survive redeploys and restarts. HTTP Range
+    requests are honoured so PDFs/images preview quickly in the browser
+    instead of having to download in full first.
+    """
+    clean_key = filename.split("?")[0].strip("/")
+    if not clean_key:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    try:
+        head = b2_client.head_object(Bucket=B2_BUCKET_NAME, Key=clean_key)
+    except ClientError:
+        raise HTTPException(status_code=404, detail="File not found in storage")
+
+    file_size = head["ContentLength"]
+    content_type = head.get("ContentType") or "application/octet-stream"
+
+    range_header = request.headers.get("Range")
+    get_kwargs = {"Bucket": B2_BUCKET_NAME, "Key": clean_key}
+    status_code = 200
+    content_range = None
+    content_length = file_size
+
+    if range_header:
+        try:
+            _, range_value = range_header.split("=", 1)
+            start_str, end_str = range_value.split("-", 1)
+            start = int(start_str) if start_str.strip() else 0
+            end = int(end_str) if end_str.strip() else file_size - 1
+            end = min(end, file_size - 1)
+            if start > end or start >= file_size:
+                raise HTTPException(status_code=416, detail="Range Not Satisfiable")
+            get_kwargs["Range"] = f"bytes={start}-{end}"
+            content_length = end - start + 1
+            status_code = 206
+            content_range = f"bytes {start}-{end}/{file_size}"
+        except (ValueError, AttributeError):
+            pass
+
+    try:
+        b2_response = b2_client.get_object(**get_kwargs)
+    except ClientError:
+        raise HTTPException(status_code=502, detail="Storage fetch error")
+
+    doc = db.query(Document).filter(Document.stored_path == clean_key).first()
+    display_name = doc.filename if doc else clean_key.split("/")[-1]
+
+    def _stream(body, chunk_size: int = 65536):
+        with body as stream:
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+    headers = {
+        "Content-Type": content_type,
+        "Content-Length": str(content_length),
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{display_name}"',
+        "Cache-Control": "private, max-age=3600",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
+    }
+    if content_range:
+        headers["Content-Range"] = content_range
+
+    return StreamingResponse(
+        _stream(b2_response["Body"]),
+        status_code=status_code,
+        headers=headers,
+        media_type=content_type,
+    )
 
 
 # ---------------------------- Accountability --------------------------------
