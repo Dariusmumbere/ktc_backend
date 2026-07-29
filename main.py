@@ -5,7 +5,7 @@ import uuid
 import logging
 import datetime as dt
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,11 +44,17 @@ if not DATABASE_URL:
 
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret-in-production")
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15 
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
 
 # --------------------------------------------------------------------------
 # Backblaze B2 (S3-compatible) object storage
 # --------------------------------------------------------------------------
+# Same bucket / endpoint / credential pattern used across our other
+# applications (e.g. ScienceTech Academy). Accountability documents for
+# KTC-IPFMS are stored in that same bucket, under their own folder prefix
+# ("ktc-documents/<requisition_id>/<uuid>.<ext>") so they never collide with
+# course images, avatars, certificates, etc. from other apps sharing the
+# bucket.
 B2_BUCKET_NAME = os.getenv("B2_BUCKET_NAME", "uploads-dir")
 B2_ENDPOINT_URL = os.getenv("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
 B2_KEY_ID = os.getenv("B2_KEY_ID", "0055ca7845641d30000000002")
@@ -83,6 +89,92 @@ ROLES = [
 ]
 
 # --------------------------------------------------------------------------
+# Shared numeric amount parser
+# --------------------------------------------------------------------------
+# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4)
+# get turned into a Python float, and it is used at every point a value can
+# enter or leave the system:
+#   - Excel import (values come in as text or native numbers from openpyxl)
+#   - Manual create/update via the API (values come in as JSON — normally a
+#     number, but a client could send a string)
+#   - Every read/response (BudgetCode.allocated_amount /
+#     BudgetCode.available_balance and budget_code_to_out) — so if a row's
+#     underlying value is ever anything other than a clean float (e.g. a
+#     legacy row written before this fix, or a value that reached the DB
+#     through some other path), it is re-interpreted correctly on the way
+#     out instead of silently rendering as 0 or crashing the response.
+#
+# Having ONE parser instead of one at import-time and a different, separate
+# conversion at display-time is deliberate: two independent implementations
+# is exactly how a value can be "fixed" going in but still show wrong going
+# out (or vice-versa).
+_THOUSANDS_SPACE_RE = re.compile(r"(?<=\d)[\s\u00A0\u2009\u202F](?=\d)")
+_AMOUNT_CURRENCY_NOISE = ("UGX", "Ugx", "ugx", "USH", "Ush", "ush", "/=", "=", "%")
+
+
+def parse_amount_verbose(v):
+    """Parse any raw value (native number, text, None) into a float.
+
+    Returns (value, ok, original_text):
+      - value: the parsed float (0.0 if v was empty/None, or if parsing
+        ultimately failed)
+      - ok: False only when a genuinely non-empty, non-numeric value had to
+        be discarded — lets callers that care (the Excel importer) warn the
+        user instead of staying silent
+      - original_text: the original value as text, for error messages
+    """
+    if v is None:
+        return 0.0, True, ""
+    if isinstance(v, bool):
+        return 0.0, True, str(v)
+    if isinstance(v, (int, float, Decimal)):
+        return float(v), True, str(v)
+
+    original = str(v)
+    s = original.strip()
+    if s == "":
+        return 0.0, True, s
+
+    negative = False
+    if s.startswith("(") and s.endswith(")"):
+        negative = True
+        s = s[1:-1].strip()
+    elif s.startswith("-"):
+        negative = True
+        s = s[1:].strip()
+
+    # Normalise assorted unicode space characters (non-breaking, thin, etc.)
+    # to plain spaces before we treat them as thousands separators.
+    s = s.replace("\u00A0", " ").replace("\u2009", " ").replace("\u202F", " ")
+
+    for token in _AMOUNT_CURRENCY_NOISE:
+        s = s.replace(token, "")
+    s = s.strip()
+
+    # Remove thousands separators: commas, and spaces sitting between digits
+    # (e.g. "1 200 000").
+    s = s.replace(",", "")
+    s = _THOUSANDS_SPACE_RE.sub("", s)
+    s = s.strip()
+
+    if s == "" or s == "-":
+        return 0.0, True, original.strip()
+
+    try:
+        result = float(s)
+    except (TypeError, ValueError):
+        return 0.0, False, original.strip()
+
+    return (-result if negative else result), True, original.strip()
+
+
+def parse_amount(v) -> float:
+    """Best-effort float conversion — never raises, defaults to 0.0."""
+    value, _ok, _original = parse_amount_verbose(v)
+    return value
+
+
+# --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
 
@@ -105,6 +197,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Position (job title) is a free-text field filled in manually by the
+    # administrator when creating the account (e.g. "Senior Accountant",
+    # "Community Development Officer") — it is not tied to a fixed list.
     position = Column(String(150), nullable=True)
     telephone = Column(String(40), nullable=True)
     is_active = Column(Boolean, default=True)
@@ -148,6 +243,8 @@ class BudgetCode(Base):
     baseline_value = Column(Float, default=0)
     planned_target = Column(Float, default=0)
     actual_output = Column(String(255))
+    # Quarterly planned amounts (UGX) — these replace a single manually
+    # entered "allocated amount"; the total is derived from their sum.
     q1_amount = Column(Float, default=0)
     q2_amount = Column(Float, default=0)
     q3_amount = Column(Float, default=0)
@@ -161,7 +258,14 @@ class BudgetCode(Base):
 
     @property
     def allocated_amount(self):
-        return (self.q1_amount or 0) + (self.q2_amount or 0) + (self.q3_amount or 0) + (self.q4_amount or 0)
+        # Defensive: parse_amount() rather than trusting the raw column
+        # value directly. This means a row whose quarterly figures were
+        # ever stored oddly (e.g. non-numeric) still totals correctly
+        # instead of the sum silently excluding it or raising.
+        return (
+            parse_amount(self.q1_amount) + parse_amount(self.q2_amount) +
+            parse_amount(self.q3_amount) + parse_amount(self.q4_amount)
+        )
 
     @property
     def committed_amount(self):
@@ -203,6 +307,8 @@ class Requisition(Base):
     activity_details = Column(Text)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
+    # draft, submitted, hod_approved, treasurer_approved, approved,
+    # rejected, returned, accounting_pending, accounted
     current_stage = Column(String(20), default="hod")  # hod / treasurer / clerk / done
     created_at = Column(DateTime, default=dt.datetime.utcnow)
     updated_at = Column(DateTime, default=dt.datetime.utcnow)
@@ -248,6 +354,8 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
+    # stored_path now holds the Backblaze B2 *object key* (e.g.
+    # "ktc-documents/42/9f3c1a2b....pdf"), not a local filesystem path.
     stored_path = Column(String(500), nullable=False)
     doc_type = Column(String(50), default="supporting")  # supporting / receipt / voucher / attendance / other
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -280,17 +388,26 @@ Base.metadata.create_all(bind=engine)
 
 
 def _run_lightweight_migrations():
+    """
+    Add newly introduced columns to an already-existing database without
+    requiring a full migration tool. Safe to run on every startup: each
+    ALTER is wrapped so a column that already exists (or a backend, like
+    SQLite, that behaves differently) never crashes the app.
+    """
     statements = [
+        # BudgetCode — earlier additions
         "ALTER TABLE budget_codes ADD COLUMN indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN q1_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q2_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q3_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q4_amount FLOAT DEFAULT 0",
+        # BudgetCode — "New Budget Estimates Data Entry Form" fields
         "ALTER TABLE budget_codes ADD COLUMN service_area VARCHAR(150)",
         "ALTER TABLE budget_codes ADD COLUMN piap_output_description VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
+        # Users — Position & Telephone
         "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
     ]
@@ -302,6 +419,9 @@ def _run_lightweight_migrations():
             except Exception:
                 conn.rollback()  # column already exists (or backend quirk) — ignore
 
+    # One-time backfill: if a legacy row has data in the old "indicator"
+    # column but nothing in the new "piap_output_indicator" column, copy it
+    # across so nothing already entered is lost.
     try:
         with engine.connect() as conn:
             conn.exec_driver_sql(
@@ -331,6 +451,9 @@ class Token(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    # The role the person selected on the "Signing in as" dropdown. Optional
+    # for backwards compatibility (e.g. API clients that don't send it), but
+    # when present it must match the account's actual role.
     role: Optional[str] = None
 
 
@@ -392,14 +515,40 @@ class BudgetCodeIn(BaseModel):
     piap_output_description: Optional[str] = None
     piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
-    baseline_value: float = 0
-    planned_target: float = 0
+    # Accept a number OR text: the form always sends a clean number, but any
+    # other API client might send "1,200,000" — parse_amount() in the
+    # endpoint below handles either.
+    baseline_value: Union[float, int, str] = 0
+    planned_target: Union[float, int, str] = 0
     actual_output: Optional[str] = None
-    q1_amount: float = 0
-    q2_amount: float = 0
-    q3_amount: float = 0
-    q4_amount: float = 0
+    q1_amount: Union[float, int, str] = 0
+    q2_amount: Union[float, int, str] = 0
+    q3_amount: Union[float, int, str] = 0
+    q4_amount: Union[float, int, str] = 0
     funding_source: str = "Local Revenue"
+    responsible_party: Optional[str] = None
+
+
+class BudgetCodeUpdate(BaseModel):
+    """Partial update — every field optional, only what's sent gets changed.
+    Lets an admin correct a specific row (e.g. one that was zeroed out by an
+    earlier bad import) without deleting and recreating it."""
+    service_area: Optional[str] = None
+    code: Optional[str] = None
+    output_description: Optional[str] = None
+    programme: Optional[str] = None
+    sub_programme: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    baseline_value: Optional[Union[float, int, str]] = None
+    planned_target: Optional[Union[float, int, str]] = None
+    actual_output: Optional[str] = None
+    q1_amount: Optional[Union[float, int, str]] = None
+    q2_amount: Optional[Union[float, int, str]] = None
+    q3_amount: Optional[Union[float, int, str]] = None
+    q4_amount: Optional[Union[float, int, str]] = None
+    funding_source: Optional[str] = None
     responsible_party: Optional[str] = None
 
 
@@ -546,6 +695,10 @@ def notify_role(db: Session, role: str, message: str, category: str = "info", re
 # --------------------------------------------------------------------------
 # Backblaze B2 storage helpers
 # --------------------------------------------------------------------------
+# Mirrors the upload/delete pattern used in our other apps: object keys are
+# namespaced under a folder prefix, content is streamed straight into the
+# bucket, and errors are surfaced as clean HTTP 500s rather than raw
+# botocore exceptions.
 
 async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
     """Upload an accountability document to Backblaze B2 and return its object key."""
@@ -571,6 +724,7 @@ def delete_document_from_b2(key: str):
         b2_client.delete_object(Bucket=B2_BUCKET_NAME, Key=key)
         logger.info(f"Document deleted from B2: {key}")
     except Exception as e:
+        # Never let a storage cleanup failure break the calling request.
         logger.warning(f"Error deleting document from B2: {e}")
 
 
@@ -592,7 +746,19 @@ app.add_middleware(
 @app.on_event("startup")
 def seed_data():
     """
-    Idempotent startup seeding. Never allowed to crash the app.
+    Idempotent startup seeding.
+
+    IMPORTANT: this must never crash the app. Earlier versions gated seeding
+    purely on `User.count() == 0`, which is unsafe: if a prior deploy created
+    the Department row but then failed/restarted before the User row was
+    committed (or if the users table was ever cleared independently of
+    departments), the count-based check becomes true again and the app tries
+    to re-insert a Department with a name that already has a UNIQUE
+    constraint on it -> IntegrityError -> "Application startup failed."
+
+    Fix: look up each seed row by its natural/unique key first (get-or-create)
+    instead of relying on a derived count, and wrap the whole routine in a
+    try/except so a seeding hiccup never takes the whole API down.
     """
     db = SessionLocal()
     try:
@@ -601,8 +767,11 @@ def seed_data():
         default_dept_name = "Administration and Support Services"
         default_dept_code = "ADM"
 
+        # 1) Get-or-create the default department by its unique name.
         dep = db.query(Department).filter(Department.name == default_dept_name).first()
         if not dep:
+            # Also guard against the code already existing under a
+            # different name (code is unique too).
             dep = db.query(Department).filter(Department.code == default_dept_code).first()
         if not dep:
             dep = Department(name=default_dept_name, code=default_dept_code)
@@ -611,9 +780,11 @@ def seed_data():
                 db.commit()
                 db.refresh(dep)
             except IntegrityError:
+                # Another worker/process created it concurrently — fetch it.
                 db.rollback()
                 dep = db.query(Department).filter(Department.name == default_dept_name).first()
 
+        # 2) Get-or-create the admin user by its unique email.
         existing_admin = db.query(User).filter(User.email == admin_email).first()
         if not existing_admin:
             admin = User(
@@ -647,6 +818,10 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been deactivated")
+    # If the person selected a role on the "Signing in as" dropdown, make
+    # sure it actually matches the account's role. This catches the common
+    # mistake of, say, a Head of Department selecting "Staff Member" and
+    # then being confused about missing approval permissions.
     if payload.role and payload.role != user.role:
         raise HTTPException(
             status_code=401,
@@ -748,6 +923,11 @@ def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: U
 # ---------------------------- Budget Codes ----------------------------------
 
 def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
+    # Every numeric field is re-parsed with parse_amount() here rather than
+    # trusted as-is. This is what makes the fix "self-healing": even a row
+    # whose q1-q4/baseline/target ended up stored oddly for any reason will
+    # display correctly on every read from now on, with no need to touch
+    # the database directly or re-import the source workbook.
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=bc.department.name if bc.department else None,
@@ -757,10 +937,10 @@ def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
         piap_output_description=bc.piap_output_description,
         piap_output_indicator=bc.piap_output_indicator,
         unit_of_measure=bc.unit_of_measure,
-        baseline_value=bc.baseline_value, planned_target=bc.planned_target,
+        baseline_value=parse_amount(bc.baseline_value), planned_target=parse_amount(bc.planned_target),
         actual_output=bc.actual_output,
-        q1_amount=bc.q1_amount or 0, q2_amount=bc.q2_amount or 0,
-        q3_amount=bc.q3_amount or 0, q4_amount=bc.q4_amount or 0,
+        q1_amount=parse_amount(bc.q1_amount), q2_amount=parse_amount(bc.q2_amount),
+        q3_amount=parse_amount(bc.q3_amount), q4_amount=parse_amount(bc.q4_amount),
         funding_source=bc.funding_source,
         responsible_party=bc.responsible_party,
         allocated_amount=bc.allocated_amount, committed_amount=bc.committed_amount,
@@ -783,13 +963,45 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
     return [budget_code_to_out(bc) for bc in q.order_by(BudgetCode.code).all()]
 
 
+_BUDGET_CODE_NUMERIC_FIELDS = ("baseline_value", "planned_target", "q1_amount", "q2_amount", "q3_amount", "q4_amount")
+
+
 @app.post("/api/budget-codes", response_model=BudgetCodeOut)
 def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    bc = BudgetCode(**payload.dict())
+    data = payload.dict()
+    for f in _BUDGET_CODE_NUMERIC_FIELDS:
+        data[f] = parse_amount(data[f])
+    bc = BudgetCode(**data)
     db.add(bc)
     db.commit()
     db.refresh(bc)
     log_action(db, admin.id, "budget_code.create", f"{bc.code} - {bc.output_description}")
+    return budget_code_to_out(bc)
+
+
+@app.patch("/api/budget-codes/{bc_id}", response_model=BudgetCodeOut)
+def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depends(get_db),
+                        admin: User = Depends(require_roles("admin"))):
+    """
+    Correct a single budget code row directly — in particular, this is the
+    fix for rows that were already zeroed out by an earlier bad import: the
+    parsing fix in /api/budget-codes/import only protects *future* imports,
+    it cannot retroactively recover a value that was already overwritten
+    with 0 in the database. Use this endpoint (or re-import the same source
+    workbook) to put the correct figure back.
+    """
+    bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
+    if not bc:
+        raise HTTPException(status_code=404, detail="Budget code not found")
+    data = payload.dict(exclude_unset=True)
+    for f in _BUDGET_CODE_NUMERIC_FIELDS:
+        if f in data:
+            data[f] = parse_amount(data[f])
+    for field, value in data.items():
+        setattr(bc, field, value)
+    db.commit()
+    db.refresh(bc)
+    log_action(db, admin.id, "budget_code.update", f"{bc.code} - {bc.output_description}")
     return budget_code_to_out(bc)
 
 
@@ -801,10 +1013,11 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
 #   Indicator, Unit of Measure, Baseline Value, Planned Target, Actual
 #   Output, Q1 (UGX), Q2 (UGX), Q3 (UGX), Q4 (UGX), Funding Source,
 #   Responsible Party
-# "Department" is matched against existing department names (normalised —
-# see _normalize_key below); a department that doesn't exist yet is skipped
-# with an error message rather than silently dropped. "Total Budget (UGX)"
-# is ignored if present, since it is always recomputed as Q1+Q2+Q3+Q4.
+# "Department" is matched against existing department names (case
+# insensitive); a department that doesn't exist yet is skipped with an
+# error message rather than silently dropped, so the user knows to create
+# it (or fix a typo) first. "Total Budget (UGX)" is ignored if present,
+# since it is always recomputed as Q1+Q2+Q3+Q4.
 
 _IMPORT_COLUMN_ALIASES = {
     "department": "department",
@@ -845,143 +1058,6 @@ _NUMERIC_FIELD_LABELS = {
     "q3_amount": "Q3 (UGX)",
     "q4_amount": "Q4 (UGX)",
 }
-
-# --------------------------------------------------------------------------
-# Robust value normalisation for imported spreadsheets
-# --------------------------------------------------------------------------
-# Two independent classes of "commas break the import" bugs are fixed here:
-#
-#   1. NUMBERS: a cell like "150,000" (thousands separator), "150,50"
-#      (decimal comma), or "1.234.567,89" (European thousands-dot /
-#      decimal-comma) must all parse to the right float instead of being
-#      silently zeroed out or rejected.
-#
-#   2. TEXT MATCH KEYS (department names): a department cell like
-#      "Production, Marketing and Natural Resources," (stray trailing
-#      comma) or with irregular spacing must still match the department
-#      "Production, Marketing and Natural Resources" stored in the
-#      database — otherwise the entire row is skipped as "department not
-#      found" even though the department clearly exists. We normalise both
-#      sides (stored name and imported cell) the same way before comparing.
-
-_THOUSANDS_SPACE_RE = re.compile(r"(?<=\d)[\s\u00A0\u2009\u202F](?=\d)")
-_CURRENCY_NOISE = ("UGX", "Ugx", "ugx", "USH", "Ush", "ush", "/=", "=", "%")
-_PUNCT_COLLAPSE_RE = re.compile(r"[,\.;:]+")
-_WHITESPACE_COLLAPSE_RE = re.compile(r"\s+")
-
-
-def _normalize_key(s: Optional[str]) -> str:
-    """
-    Normalise a name for safe matching: lowercase, collapse whitespace, and
-    turn stray commas/periods/semicolons/colons into spaces. This lets a
-    department (or other text key) match correctly even if a spreadsheet
-    export introduced a trailing comma, double space, or similar cosmetic
-    difference — without loosening matching enough to confuse genuinely
-    different names.
-    """
-    if s is None:
-        return ""
-    s = str(s).strip().lower()
-    s = _PUNCT_COLLAPSE_RE.sub(" ", s)
-    s = _WHITESPACE_COLLAPSE_RE.sub(" ", s).strip()
-    return s
-
-
-def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None) -> float:
-    """
-    Parse a spreadsheet cell into a float, robustly handling every common
-    way commas show up in numeric data:
-
-      "150,000"        -> 150000.0   (comma = thousands separator)
-      "150,50"         -> 150.5      (comma = decimal separator)
-      "1,200,000.75"   -> 1200000.75 (comma thousands, dot decimal)
-      "1.200.000,75"   -> 1200000.75 (dot thousands, comma decimal)
-      "(1,200,000)"    -> -1200000.0 (parenthesised negative)
-      "UGX 150,000"    -> 150000.0   (currency label stripped)
-      "150 000"        -> 150000.0   (space thousands separator)
-
-    Never raises — an unparseable cell is recorded in row_warnings (so it
-    surfaces in the import result) and treated as 0, but the row itself is
-    NOT skipped just because one numeric cell was malformed.
-    """
-    if v is None:
-        return 0.0
-    if isinstance(v, bool):
-        return 0.0
-    if isinstance(v, (int, float, Decimal)):
-        return float(v)
-
-    original = str(v)
-    s = original.strip()
-    if s == "":
-        return 0.0
-
-    negative = False
-    if s.startswith("(") and s.endswith(")"):
-        negative = True
-        s = s[1:-1].strip()
-    elif s.startswith("-"):
-        negative = True
-        s = s[1:].strip()
-    elif s.endswith("-"):
-        negative = True
-        s = s[:-1].strip()
-
-    # Normalise assorted unicode space characters to plain spaces.
-    s = s.replace("\u00A0", " ").replace("\u2009", " ").replace("\u202F", " ")
-
-    for token in _CURRENCY_NOISE:
-        s = s.replace(token, "")
-    s = s.strip()
-
-    # Decide which of "," and "." (if either/both are present) is the
-    # decimal separator, instead of assuming a single fixed convention.
-    has_comma = "," in s
-    has_dot = "." in s
-    if has_comma and has_dot:
-        if s.rfind(",") > s.rfind("."):
-            # e.g. "1.200.000,75" — comma is decimal, dots are thousands
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            # e.g. "1,200,000.75" — dot is decimal, commas are thousands
-            s = s.replace(",", "")
-    elif has_comma and not has_dot:
-        # Only commas. If there's exactly one comma followed by 1-2
-        # digits, treat it as a decimal point (e.g. "150,5" or "150,50").
-        # Otherwise every comma is a thousands separator (e.g. "150,000"
-        # or "1,200,000").
-        parts = s.split(",")
-        if len(parts) == 2 and parts[1].isdigit() and 1 <= len(parts[1]) <= 2:
-            s = s.replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    # If only dots (or neither), leave as-is — a lone dot already behaves
-    # as a normal decimal point.
-
-    # Remove any remaining space-based thousands separators (e.g. "150 000").
-    s = _THOUSANDS_SPACE_RE.sub("", s)
-    s = s.strip()
-
-    if s == "" or s == "-":
-        return 0.0
-
-    try:
-        result = float(s)
-    except (TypeError, ValueError):
-        if row_warnings is not None:
-            label = _NUMERIC_FIELD_LABELS.get(field_key, field_key or "value")
-            loc = f"Row {row_idx}: " if row_idx else ""
-            row_warnings.append(f"{loc}could not read '{original.strip()}' as a number for {label} — treated as 0")
-        return 0.0
-
-    return -result if negative else result
-
-
-def _text(v):
-    if v is None:
-        return None
-    s = str(v).strip()
-    return s if s else None
 
 
 @app.post("/api/budget-codes/import", response_model=BudgetCodeImportResult)
@@ -1035,15 +1111,27 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             detail="The workbook must at least include 'Budget Output Code' and 'Budget Output Description' columns"
         )
 
-    # Normalised lookup so a department name in the spreadsheet with a
-    # stray comma, trailing punctuation, or extra whitespace still matches
-    # the corresponding department stored in the database.
-    all_departments = db.query(Department).all()
-    departments_by_key = {_normalize_key(d.name): d for d in all_departments}
+    departments_by_name = {d.name.strip().lower(): d for d in db.query(Department).all()}
 
     created = 0
     skipped = 0
     errors: List[str] = []
+
+    # Numeric cells go through the single shared parse_amount_verbose() —
+    # the same parser used for manual create/update and for every read —
+    # so import, entry, and display can never drift out of sync again. The
+    # only import-specific behaviour is turning a failed parse into a
+    # visible warning instead of a silent zero.
+    def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None):
+        value, ok, original = parse_amount_verbose(v)
+        if not ok and row_warnings is not None:
+            label = _NUMERIC_FIELD_LABELS.get(field_key, field_key or "value")
+            loc = f"Row {row_idx}: " if row_idx else ""
+            row_warnings.append(f"{loc}could not read '{original}' as a number for {label} — treated as 0")
+        return value
+
+    def _text(v):
+        return str(v).strip() if v is not None else None
 
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None or all(c is None or str(c).strip() == "" for c in row):
@@ -1053,7 +1141,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             data[field] = row[idx] if idx < len(row) else None
 
         dept_name = _text(data.get("department"))
-        dept = departments_by_key.get(_normalize_key(dept_name)) if dept_name else None
+        dept = departments_by_name.get(dept_name.lower()) if dept_name else None
         if not dept:
             skipped += 1
             errors.append(f"Row {row_idx}: department '{dept_name or ''}' was not found — skipped")
@@ -1154,6 +1242,10 @@ def requisition_to_dict(r: Requisition) -> dict:
             } for a in r.approvals
         ],
         "documents": [
+            # d.stored_path is the Backblaze B2 object key. The /files
+            # route below streams the object straight out of B2, so the
+            # frontend's existing "${API_BASE}${d.url}" link pattern keeps
+            # working unchanged.
             {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{d.stored_path}"}
             for d in r.documents
         ],
@@ -1220,6 +1312,7 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
 
 
 def _submit_requisition(r: Requisition, db: Session, user: User):
+    # Budget validation
     bc = r.budget_code
     if r.activity_id:
         act = db.query(Activity).filter(Activity.id == r.activity_id, Activity.budget_code_id == bc.id).first()
@@ -1278,11 +1371,18 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     db.add(history)
 
     if payload.action == "approve":
+        # re-verify budget at treasurer stage
         if stage == "treasurer" and r.budget_code.available_balance < 0:
             raise HTTPException(status_code=400, detail="Budget has since been exhausted for this code")
         r.status = STAGE_STATUS[stage]
         nxt = NEXT_STAGE[stage]
         if nxt == "done":
+            # Fully approved: the requisition now sits on the internal
+            # auditor's wall pending accountability documents (this is
+            # exactly the "pending until all accountability documents are
+            # uploaded, including the payment voucher" behaviour) — an
+            # AccountabilityRecord is created in "pending" status and only
+            # moves to "verified" once the auditor reviews the uploads.
             r.current_stage = "done"
             r.status = "approved"
             acc = AccountabilityRecord(requisition_id=r.id, status="pending")
@@ -1337,6 +1437,14 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
     if not r:
         raise HTTPException(status_code=404, detail="Requisition not found")
 
+    # Accountability documents can only be attached once the requisition has
+    # cleared full approval (i.e. an AccountabilityRecord exists for it), and
+    # only by the staff member/project officer responsible for the requisition
+    # (or an administrator). This matches the intended workflow: the auditor
+    # reviews what has been uploaded, they do not upload on the requester's
+    # behalf. The requisition stays on the internal auditor's wall until
+    # every required accountability document — including the payment
+    # voucher — has been uploaded and the auditor marks it verified.
     if not r.accountability:
         raise HTTPException(
             status_code=400,
@@ -1362,6 +1470,8 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
                     doc_type=doc_type, uploaded_by=user.id)
     db.add(doc)
 
+    # If a previous auditor review had flagged this requisition, a fresh
+    # upload puts it back into "pending" so the auditor knows to re-review it.
     if r.accountability.status == "flagged":
         r.accountability.status = "pending"
 
@@ -1375,6 +1485,12 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
 async def stream_document(filename: str, request: Request, db: Session = Depends(get_db)):
     """
     Stream an accountability document straight out of Backblaze B2.
+
+    Documents are addressed by their B2 object key (e.g.
+    "ktc-documents/42/9f3c1a2b....pdf") and proxied here rather than served
+    from local disk, so uploads survive redeploys and restarts. HTTP Range
+    requests are honoured so PDFs/images preview quickly in the browser
+    instead of having to download in full first.
     """
     clean_key = filename.split("?")[0].strip("/")
     if not clean_key:
@@ -1456,6 +1572,11 @@ def update_accountability(req_id: int, payload: AccountabilityIn,
     if not r or not r.accountability:
         raise HTTPException(status_code=404, detail="No accountability record found for this requisition")
 
+    # Hard server-side gate: a requisition stays on the internal auditor's
+    # wall until every required accountability document — including the
+    # Payment Voucher — has actually been uploaded. The auditor cannot mark
+    # a requisition "verified" without documents attached, regardless of
+    # what the client sends.
     if payload.status == "verified":
         if not r.documents:
             raise HTTPException(
