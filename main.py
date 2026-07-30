@@ -54,12 +54,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
 # KTC-IPFMS are stored in that same bucket, under their own folder prefix
 # ("ktc-documents/<requisition_id>/<uuid>.<ext>") so they never collide with
 # course images, avatars, certificates, etc. from other apps sharing the
-# bucket.
+# bucket. User signatures live under their own prefix
+# ("ktc-signatures/<user_id>/<uuid>.<ext>") for the same reason.
 B2_BUCKET_NAME = os.getenv("B2_BUCKET_NAME", "uploads-dir")
 B2_ENDPOINT_URL = os.getenv("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
 B2_KEY_ID = os.getenv("B2_KEY_ID", "0055ca7845641d30000000002")
 B2_APPLICATION_KEY = os.getenv("B2_APPLICATION_KEY", "K005NNeGM9r28ujQ3jvNEQy2zUiu0TI")
 B2_DOCUMENTS_FOLDER = "ktc-documents"
+B2_SIGNATURES_FOLDER = "ktc-signatures"
 
 b2_client = boto3.client(
     "s3",
@@ -91,9 +93,9 @@ ROLES = [
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
 # --------------------------------------------------------------------------
-# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4,
-# and requisition line-item qty/rate/amount) get turned into a Python float,
-# and it is used at every point a value can enter or leave the system:
+# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4)
+# get turned into a Python float, and it is used at every point a value can
+# enter or leave the system:
 #   - Excel import (values come in as text or native numbers from openpyxl)
 #   - Manual create/update via the API (values come in as JSON — normally a
 #     number, but a client could send a string)
@@ -174,15 +176,6 @@ def parse_amount(v) -> float:
     return value
 
 
-def parse_amount_optional(v):
-    """Like parse_amount(), but returns None for empty/None input instead of
-    0.0 — used for requisition line-item Qty/Rate, which are legitimately
-    blank for items priced as a lump sum (e.g. facilitation, transport)."""
-    if v is None or v == "":
-        return None
-    return parse_amount(v)
-
-
 # --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
@@ -211,10 +204,19 @@ class User(Base):
     # "Community Development Officer") — it is not tied to a fixed list.
     position = Column(String(150), nullable=True)
     telephone = Column(String(40), nullable=True)
+    # Object key of this user's uploaded signature image inside Backblaze
+    # B2 (e.g. "ktc-signatures/7/9f3c1a2b....png"), or NULL if the user
+    # hasn't uploaded one yet. Stored exactly like accountability document
+    # keys so it can be streamed back out through the same /files route.
+    signature_path = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     department = relationship("Department", back_populates="users")
+
+    @property
+    def signature_url(self):
+        return f"/files/{self.signature_path}" if self.signature_path else None
 
 
 class WorkPlan(Base):
@@ -313,11 +315,6 @@ class Requisition(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
-    # "Subject" mirrors the Council's paper Funds Requisition Form (e.g.
-    # "Monitoring roads for 3rd Qtr works"). activity_details is kept in
-    # sync with it for backward compatibility with any older client/report
-    # that still reads activity_details directly.
-    subject = Column(Text)
     activity_details = Column(Text)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
@@ -334,30 +331,6 @@ class Requisition(Base):
     approvals = relationship("ApprovalHistory", back_populates="requisition", order_by="ApprovalHistory.id")
     documents = relationship("Document", back_populates="requisition")
     accountability = relationship("AccountabilityRecord", back_populates="requisition", uselist=False)
-    line_items = relationship(
-        "RequisitionLineItem", back_populates="requisition",
-        order_by="RequisitionLineItem.id", cascade="all, delete-orphan",
-    )
-
-
-class RequisitionLineItem(Base):
-    """
-    One priced row of the requisition's itemised breakdown — mirrors the
-    Council's paper form, where a numbered section (e.g. "01  Field fuel")
-    can hold several description/units/qty/rate/amount lines, followed by a
-    Grand Total struck at the bottom of the whole form.
-    """
-    __tablename__ = "requisition_line_items"
-    id = Column(Integer, primary_key=True, index=True)
-    requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
-    item_no = Column(Integer, default=1)         # the paper form's "No." column (section number)
-    description = Column(String(255), nullable=False)
-    units = Column(String(30))
-    qty = Column(Float, nullable=True)
-    rate = Column(Float, nullable=True)
-    amount = Column(Float, default=0)
-
-    requisition = relationship("Requisition", back_populates="line_items")
 
 
 class ApprovalHistory(Base):
@@ -448,8 +421,8 @@ def _run_lightweight_migrations():
         # Users — Position & Telephone
         "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
-        # Requisitions — Subject (paper Funds Requisition Form field)
-        "ALTER TABLE requisitions ADD COLUMN subject TEXT",
+        # Users — Signature (object key of the uploaded signature image)
+        "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -459,26 +432,15 @@ def _run_lightweight_migrations():
             except Exception:
                 conn.rollback()  # column already exists (or backend quirk) — ignore
 
-    # One-time backfills for legacy rows.
+    # One-time backfill: if a legacy row has data in the old "indicator"
+    # column but nothing in the new "piap_output_indicator" column, copy it
+    # across so nothing already entered is lost.
     try:
         with engine.connect() as conn:
             conn.exec_driver_sql(
                 "UPDATE budget_codes SET piap_output_indicator = indicator "
                 "WHERE (piap_output_indicator IS NULL OR piap_output_indicator = '') "
                 "AND indicator IS NOT NULL AND indicator <> ''"
-            )
-            conn.commit()
-    except Exception:
-        pass
-    try:
-        with engine.connect() as conn:
-            # Any requisition created before "subject" existed still has its
-            # purpose recorded in activity_details — copy it across once so
-            # older records still show a Subject on the printable form.
-            conn.exec_driver_sql(
-                "UPDATE requisitions SET subject = activity_details "
-                "WHERE (subject IS NULL OR subject = '') "
-                "AND activity_details IS NOT NULL AND activity_details <> ''"
             )
             conn.commit()
     except Exception:
@@ -517,6 +479,7 @@ class UserOut(BaseModel):
     position: Optional[str] = None
     telephone: Optional[str] = None
     is_active: bool
+    signature_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -652,45 +615,11 @@ class ActivityOut(ActivityIn):
         from_attributes = True
 
 
-class LineItemIn(BaseModel):
-    """One row of the requisition's itemised breakdown, as entered on the
-    'Line Items' table in the New Requisition form. item_no groups rows
-    into the paper form's numbered sections (e.g. all rows under "01 Field
-    fuel" share item_no=1). qty/rate are optional — some paper-form lines
-    (facilitation, transport) carry only a lump-sum Amount."""
-    item_no: int = 1
-    description: str
-    units: Optional[str] = None
-    qty: Optional[Union[float, int, str]] = None
-    rate: Optional[Union[float, int, str]] = None
-    amount: Union[float, int, str] = 0
-
-
-class LineItemOut(BaseModel):
-    id: int
-    item_no: int
-    description: str
-    units: Optional[str] = None
-    qty: Optional[float] = None
-    rate: Optional[float] = None
-    amount: float
-
-    class Config:
-        from_attributes = True
-
-
 class RequisitionIn(BaseModel):
     budget_code_id: int
     activity_id: Optional[int] = None
-    subject: str
-    # Kept for backward compatibility with any older client that still
-    # posts activity_details directly instead of subject; if omitted it is
-    # simply set equal to subject.
-    activity_details: Optional[str] = None
-    line_items: List[LineItemIn] = Field(default_factory=list)
-    # Fallback only: if no itemised breakdown is supplied, a single line
-    # item is built from this amount and the subject.
-    amount_requested: Optional[Union[float, int, str]] = None
+    activity_details: str
+    amount_requested: float
 
 
 class ApprovalActionIn(BaseModel):
@@ -802,6 +731,25 @@ async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
     except Exception as e:
         logger.error(f"Error uploading document to B2: {e}")
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+
+async def upload_signature_to_b2(file: UploadFile, user_id: int) -> str:
+    """Upload a user's signature image to Backblaze B2 and return its object key."""
+    try:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        key = f"{B2_SIGNATURES_FOLDER}/{user_id}/{uuid.uuid4().hex}{ext}"
+        file_content = await file.read()
+        b2_client.put_object(
+            Bucket=B2_BUCKET_NAME,
+            Key=key,
+            Body=file_content,
+            ContentType=file.content_type or "image/png",
+        )
+        logger.info(f"Signature uploaded to B2: {key}")
+        return key
+    except Exception as e:
+        logger.error(f"Error uploading signature to B2: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading signature: {str(e)}")
 
 
 def delete_document_from_b2(key: str):
@@ -961,6 +909,51 @@ def toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User 
     db.refresh(target)
     log_action(db, admin.id, "user.toggle_active", f"{target.email} active={target.is_active}")
     return target
+
+
+# ---------------------------- User Signatures -------------------------------
+# Every user manages their OWN signature (stored under their account, in
+# their personal "settings"). It is uploaded once here and, from then on,
+# automatically attached wherever that user's name appears on a printed
+# requisition form — as the requester, or as the HOD/Treasurer/Clerk who
+# actioned an approval stage — with no per-requisition action needed.
+
+_ALLOWED_SIGNATURE_EXT = {".png", ".jpg", ".jpeg"}
+
+
+@app.post("/api/users/me/signature", response_model=UserOut)
+async def upload_my_signature(file: UploadFile = File(...), db: Session = Depends(get_db),
+                               user: User = Depends(get_current_user)):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_SIGNATURE_EXT:
+        raise HTTPException(status_code=400, detail="Only PNG and JPG images are allowed for a signature")
+
+    old_path = user.signature_path
+    new_key = await upload_signature_to_b2(file, user.id)
+    user.signature_path = new_key
+    db.commit()
+    db.refresh(user)
+
+    # Clean up the previous signature image only after the new one is
+    # safely committed, so a failed upload never leaves the user with no
+    # signature at all.
+    if old_path:
+        delete_document_from_b2(old_path)
+
+    log_action(db, user.id, "user.signature_upload", f"{user.email} uploaded a new signature")
+    return user
+
+
+@app.delete("/api/users/me/signature", response_model=UserOut)
+def delete_my_signature(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.signature_path:
+        old_path = user.signature_path
+        user.signature_path = None
+        db.commit()
+        db.refresh(user)
+        delete_document_from_b2(old_path)
+        log_action(db, user.id, "user.signature_remove", f"{user.email} removed their signature")
+    return user
 
 
 # ---------------------------- Departments -----------------------------------
@@ -1306,6 +1299,9 @@ def requisition_to_dict(r: Requisition) -> dict:
         "ref_no": r.ref_no,
         "requester_id": r.requester_id,
         "requester_name": r.requester.full_name if r.requester else None,
+        # The requester's own signature, attached automatically wherever
+        # this requisition is printed — no per-form action needed.
+        "requester_signature_url": r.requester.signature_url if r.requester else None,
         "department_id": r.department_id,
         "department_name": r.department.name if r.department else None,
         "budget_code_id": r.budget_code_id,
@@ -1313,23 +1309,20 @@ def requisition_to_dict(r: Requisition) -> dict:
         "budget_output": r.budget_code.output_description if r.budget_code else None,
         "activity_id": r.activity_id,
         "activity_name": r.activity.name if r.activity else None,
-        "subject": r.subject or r.activity_details,
-        "activity_details": r.activity_details or r.subject,
+        "activity_details": r.activity_details,
         "amount_requested": r.amount_requested,
         "status": r.status,
         "current_stage": r.current_stage,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-        "line_items": [
-            {
-                "id": li.id, "item_no": li.item_no, "description": li.description,
-                "units": li.units, "qty": li.qty, "rate": li.rate, "amount": li.amount,
-            } for li in r.line_items
-        ],
         "approvals": [
             {
                 "stage": a.stage, "actor": a.actor.full_name if a.actor else None,
                 "action": a.action, "comments": a.comments,
+                # The approving officer's signature, for this specific
+                # approval action — used to stamp the correct signature
+                # into the matching block of the printed form.
+                "actor_signature_url": a.actor.signature_url if a.actor else None,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             } for a in r.approvals
         ],
@@ -1381,50 +1374,18 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
     if not bc:
         raise HTTPException(status_code=400, detail="Selected budget code does not exist")
 
-    # Build the itemised breakdown. If the client didn't send one (older
-    # integration, or a quick single-amount request), fall back to a single
-    # line item built from amount_requested + subject so the requisition
-    # (and its printable form) still has something to show.
-    line_items_in = payload.line_items
-    if not line_items_in:
-        fallback_amount = parse_amount(payload.amount_requested)
-        if fallback_amount <= 0:
-            raise HTTPException(status_code=400, detail="Please provide at least one line item with an amount")
-        line_items_in = [LineItemIn(item_no=1, description=payload.subject, amount=fallback_amount)]
-
-    total_amount = 0.0
-    prepared_items = []
-    for li in line_items_in:
-        amount = parse_amount(li.amount)
-        qty = parse_amount_optional(li.qty)
-        rate = parse_amount_optional(li.rate)
-        total_amount += amount
-        prepared_items.append((li.item_no, li.description, li.units, qty, rate, amount))
-
-    if total_amount <= 0:
-        raise HTTPException(status_code=400, detail="Total requisition amount must be greater than zero")
-
     r = Requisition(
         ref_no=gen_ref_no(db),
         requester_id=user.id,
         department_id=user.department_id or bc.department_id,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
-        subject=payload.subject,
-        activity_details=payload.activity_details or payload.subject,
-        amount_requested=total_amount,
+        activity_details=payload.activity_details,
+        amount_requested=payload.amount_requested,
         status="draft",
         current_stage="hod",
     )
     db.add(r)
-    db.commit()
-    db.refresh(r)
-
-    for item_no, description, units, qty, rate, amount in prepared_items:
-        db.add(RequisitionLineItem(
-            requisition_id=r.id, item_no=item_no, description=description,
-            units=units, qty=qty, rate=rate, amount=amount,
-        ))
     db.commit()
     db.refresh(r)
 
@@ -1608,13 +1569,15 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
 @app.get("/files/{filename:path}")
 async def stream_document(filename: str, request: Request, db: Session = Depends(get_db)):
     """
-    Stream an accountability document straight out of Backblaze B2.
+    Stream an accountability document (or a user's signature image) straight
+    out of Backblaze B2.
 
-    Documents are addressed by their B2 object key (e.g.
-    "ktc-documents/42/9f3c1a2b....pdf") and proxied here rather than served
-    from local disk, so uploads survive redeploys and restarts. HTTP Range
-    requests are honoured so PDFs/images preview quickly in the browser
-    instead of having to download in full first.
+    Files are addressed by their B2 object key (e.g.
+    "ktc-documents/42/9f3c1a2b....pdf" or "ktc-signatures/7/ab12....png")
+    and proxied here rather than served from local disk, so uploads survive
+    redeploys and restarts. HTTP Range requests are honoured so
+    PDFs/images preview quickly in the browser instead of having to
+    download in full first.
     """
     clean_key = filename.split("?")[0].strip("/")
     if not clean_key:
@@ -1656,7 +1619,10 @@ async def stream_document(filename: str, request: Request, db: Session = Depends
         raise HTTPException(status_code=502, detail="Storage fetch error")
 
     doc = db.query(Document).filter(Document.stored_path == clean_key).first()
-    display_name = doc.filename if doc else clean_key.split("/")[-1]
+    if doc:
+        display_name = doc.filename
+    else:
+        display_name = clean_key.split("/")[-1]
 
     def _stream(body, chunk_size: int = 65536):
         with body as stream:
