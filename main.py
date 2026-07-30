@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import json
 import uuid
 import logging
 import datetime as dt
@@ -316,6 +317,14 @@ class Requisition(Base):
     budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     activity_details = Column(Text)
+    # Subject line of the requisition (e.g. "Monitoring roads for 3rd Qtr
+    # works") — shown on the requisition form and in listings.
+    subject = Column(String(255), nullable=True)
+    # JSON-encoded list of line items entered via the sectioned line-item
+    # builder in the "New Requisition" modal — each item has item_no,
+    # description, units, qty, rate, amount. amount_requested (below) is
+    # always the sum of these, computed server-side at creation time.
+    line_items = Column(Text, nullable=True)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
     # draft, submitted, hod_approved, treasurer_approved, approved,
@@ -423,6 +432,10 @@ def _run_lightweight_migrations():
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
         # Users — Signature (object key of the uploaded signature image)
         "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
+        # Requisitions — Subject & sectioned Line Items (New Requisition
+        # modal / printable form)
+        "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
+        "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -615,11 +628,25 @@ class ActivityOut(ActivityIn):
         from_attributes = True
 
 
+class RequisitionLineItemIn(BaseModel):
+    """One row from the sectioned line-item builder in the 'New
+    Requisition' modal. A section header row (e.g. '01 Field fuel') and its
+    priced lines all share the same item_no; qty/rate are optional since
+    some lines (facilitation, transport, etc.) have their amount typed in
+    directly rather than computed from qty x rate."""
+    item_no: int
+    description: str
+    units: Optional[str] = None
+    qty: Optional[float] = None
+    rate: Optional[float] = None
+    amount: float = 0
+
+
 class RequisitionIn(BaseModel):
     budget_code_id: int
     activity_id: Optional[int] = None
-    activity_details: str
-    amount_requested: float
+    subject: str
+    line_items: List[RequisitionLineItemIn]
 
 
 class ApprovalActionIn(BaseModel):
@@ -1293,6 +1320,19 @@ def gen_ref_no(db: Session) -> str:
     return f"KTC-REQ-{year}-{count:05d}"
 
 
+def _parse_requisition_line_items(raw: Optional[str]) -> list:
+    """Line items are stored as a JSON-encoded string; this always returns
+    a list (empty if there's nothing stored / it can't be parsed) so
+    callers never have to special-case None or bad JSON."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
 def requisition_to_dict(r: Requisition) -> dict:
     return {
         "id": r.id,
@@ -1310,6 +1350,8 @@ def requisition_to_dict(r: Requisition) -> dict:
         "activity_id": r.activity_id,
         "activity_name": r.activity.name if r.activity else None,
         "activity_details": r.activity_details,
+        "subject": r.subject,
+        "line_items": _parse_requisition_line_items(r.line_items),
         "amount_requested": r.amount_requested,
         "status": r.status,
         "current_stage": r.current_stage,
@@ -1374,14 +1416,22 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
     if not bc:
         raise HTTPException(status_code=400, detail="Selected budget code does not exist")
 
+    if not payload.line_items:
+        raise HTTPException(status_code=400, detail="Please add at least one line item")
+
+    total = sum((li.amount or 0) for li in payload.line_items)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="Please add at least one priced line item")
+
     r = Requisition(
         ref_no=gen_ref_no(db),
         requester_id=user.id,
         department_id=user.department_id or bc.department_id,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
-        activity_details=payload.activity_details,
-        amount_requested=payload.amount_requested,
+        subject=payload.subject,
+        line_items=json.dumps([li.dict() for li in payload.line_items]),
+        amount_requested=total,
         status="draft",
         current_stage="hod",
     )
