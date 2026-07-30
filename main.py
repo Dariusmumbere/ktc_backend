@@ -91,9 +91,9 @@ ROLES = [
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
 # --------------------------------------------------------------------------
-# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4)
-# get turned into a Python float, and it is used at every point a value can
-# enter or leave the system:
+# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4,
+# and requisition line-item qty/rate/amount) get turned into a Python float,
+# and it is used at every point a value can enter or leave the system:
 #   - Excel import (values come in as text or native numbers from openpyxl)
 #   - Manual create/update via the API (values come in as JSON — normally a
 #     number, but a client could send a string)
@@ -172,6 +172,15 @@ def parse_amount(v) -> float:
     """Best-effort float conversion — never raises, defaults to 0.0."""
     value, _ok, _original = parse_amount_verbose(v)
     return value
+
+
+def parse_amount_optional(v):
+    """Like parse_amount(), but returns None for empty/None input instead of
+    0.0 — used for requisition line-item Qty/Rate, which are legitimately
+    blank for items priced as a lump sum (e.g. facilitation, transport)."""
+    if v is None or v == "":
+        return None
+    return parse_amount(v)
 
 
 # --------------------------------------------------------------------------
@@ -304,6 +313,11 @@ class Requisition(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
+    # "Subject" mirrors the Council's paper Funds Requisition Form (e.g.
+    # "Monitoring roads for 3rd Qtr works"). activity_details is kept in
+    # sync with it for backward compatibility with any older client/report
+    # that still reads activity_details directly.
+    subject = Column(Text)
     activity_details = Column(Text)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
@@ -320,6 +334,30 @@ class Requisition(Base):
     approvals = relationship("ApprovalHistory", back_populates="requisition", order_by="ApprovalHistory.id")
     documents = relationship("Document", back_populates="requisition")
     accountability = relationship("AccountabilityRecord", back_populates="requisition", uselist=False)
+    line_items = relationship(
+        "RequisitionLineItem", back_populates="requisition",
+        order_by="RequisitionLineItem.id", cascade="all, delete-orphan",
+    )
+
+
+class RequisitionLineItem(Base):
+    """
+    One priced row of the requisition's itemised breakdown — mirrors the
+    Council's paper form, where a numbered section (e.g. "01  Field fuel")
+    can hold several description/units/qty/rate/amount lines, followed by a
+    Grand Total struck at the bottom of the whole form.
+    """
+    __tablename__ = "requisition_line_items"
+    id = Column(Integer, primary_key=True, index=True)
+    requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
+    item_no = Column(Integer, default=1)         # the paper form's "No." column (section number)
+    description = Column(String(255), nullable=False)
+    units = Column(String(30))
+    qty = Column(Float, nullable=True)
+    rate = Column(Float, nullable=True)
+    amount = Column(Float, default=0)
+
+    requisition = relationship("Requisition", back_populates="line_items")
 
 
 class ApprovalHistory(Base):
@@ -410,6 +448,8 @@ def _run_lightweight_migrations():
         # Users — Position & Telephone
         "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
+        # Requisitions — Subject (paper Funds Requisition Form field)
+        "ALTER TABLE requisitions ADD COLUMN subject TEXT",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -419,15 +459,26 @@ def _run_lightweight_migrations():
             except Exception:
                 conn.rollback()  # column already exists (or backend quirk) — ignore
 
-    # One-time backfill: if a legacy row has data in the old "indicator"
-    # column but nothing in the new "piap_output_indicator" column, copy it
-    # across so nothing already entered is lost.
+    # One-time backfills for legacy rows.
     try:
         with engine.connect() as conn:
             conn.exec_driver_sql(
                 "UPDATE budget_codes SET piap_output_indicator = indicator "
                 "WHERE (piap_output_indicator IS NULL OR piap_output_indicator = '') "
                 "AND indicator IS NOT NULL AND indicator <> ''"
+            )
+            conn.commit()
+    except Exception:
+        pass
+    try:
+        with engine.connect() as conn:
+            # Any requisition created before "subject" existed still has its
+            # purpose recorded in activity_details — copy it across once so
+            # older records still show a Subject on the printable form.
+            conn.exec_driver_sql(
+                "UPDATE requisitions SET subject = activity_details "
+                "WHERE (subject IS NULL OR subject = '') "
+                "AND activity_details IS NOT NULL AND activity_details <> ''"
             )
             conn.commit()
     except Exception:
@@ -601,11 +652,45 @@ class ActivityOut(ActivityIn):
         from_attributes = True
 
 
+class LineItemIn(BaseModel):
+    """One row of the requisition's itemised breakdown, as entered on the
+    'Line Items' table in the New Requisition form. item_no groups rows
+    into the paper form's numbered sections (e.g. all rows under "01 Field
+    fuel" share item_no=1). qty/rate are optional — some paper-form lines
+    (facilitation, transport) carry only a lump-sum Amount."""
+    item_no: int = 1
+    description: str
+    units: Optional[str] = None
+    qty: Optional[Union[float, int, str]] = None
+    rate: Optional[Union[float, int, str]] = None
+    amount: Union[float, int, str] = 0
+
+
+class LineItemOut(BaseModel):
+    id: int
+    item_no: int
+    description: str
+    units: Optional[str] = None
+    qty: Optional[float] = None
+    rate: Optional[float] = None
+    amount: float
+
+    class Config:
+        from_attributes = True
+
+
 class RequisitionIn(BaseModel):
     budget_code_id: int
     activity_id: Optional[int] = None
-    activity_details: str
-    amount_requested: float
+    subject: str
+    # Kept for backward compatibility with any older client that still
+    # posts activity_details directly instead of subject; if omitted it is
+    # simply set equal to subject.
+    activity_details: Optional[str] = None
+    line_items: List[LineItemIn] = Field(default_factory=list)
+    # Fallback only: if no itemised breakdown is supplied, a single line
+    # item is built from this amount and the subject.
+    amount_requested: Optional[Union[float, int, str]] = None
 
 
 class ApprovalActionIn(BaseModel):
@@ -1228,12 +1313,19 @@ def requisition_to_dict(r: Requisition) -> dict:
         "budget_output": r.budget_code.output_description if r.budget_code else None,
         "activity_id": r.activity_id,
         "activity_name": r.activity.name if r.activity else None,
-        "activity_details": r.activity_details,
+        "subject": r.subject or r.activity_details,
+        "activity_details": r.activity_details or r.subject,
         "amount_requested": r.amount_requested,
         "status": r.status,
         "current_stage": r.current_stage,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        "line_items": [
+            {
+                "id": li.id, "item_no": li.item_no, "description": li.description,
+                "units": li.units, "qty": li.qty, "rate": li.rate, "amount": li.amount,
+            } for li in r.line_items
+        ],
         "approvals": [
             {
                 "stage": a.stage, "actor": a.actor.full_name if a.actor else None,
@@ -1289,18 +1381,50 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
     if not bc:
         raise HTTPException(status_code=400, detail="Selected budget code does not exist")
 
+    # Build the itemised breakdown. If the client didn't send one (older
+    # integration, or a quick single-amount request), fall back to a single
+    # line item built from amount_requested + subject so the requisition
+    # (and its printable form) still has something to show.
+    line_items_in = payload.line_items
+    if not line_items_in:
+        fallback_amount = parse_amount(payload.amount_requested)
+        if fallback_amount <= 0:
+            raise HTTPException(status_code=400, detail="Please provide at least one line item with an amount")
+        line_items_in = [LineItemIn(item_no=1, description=payload.subject, amount=fallback_amount)]
+
+    total_amount = 0.0
+    prepared_items = []
+    for li in line_items_in:
+        amount = parse_amount(li.amount)
+        qty = parse_amount_optional(li.qty)
+        rate = parse_amount_optional(li.rate)
+        total_amount += amount
+        prepared_items.append((li.item_no, li.description, li.units, qty, rate, amount))
+
+    if total_amount <= 0:
+        raise HTTPException(status_code=400, detail="Total requisition amount must be greater than zero")
+
     r = Requisition(
         ref_no=gen_ref_no(db),
         requester_id=user.id,
         department_id=user.department_id or bc.department_id,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
-        activity_details=payload.activity_details,
-        amount_requested=payload.amount_requested,
+        subject=payload.subject,
+        activity_details=payload.activity_details or payload.subject,
+        amount_requested=total_amount,
         status="draft",
         current_stage="hod",
     )
     db.add(r)
+    db.commit()
+    db.refresh(r)
+
+    for item_no, description, units, qty, rate, amount in prepared_items:
+        db.add(RequisitionLineItem(
+            requisition_id=r.id, item_no=item_no, description=description,
+            units=units, qty=qty, rate=rate, amount=amount,
+        ))
     db.commit()
     db.refresh(r)
 
