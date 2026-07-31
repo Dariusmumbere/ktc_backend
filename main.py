@@ -50,13 +50,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
 # --------------------------------------------------------------------------
 # Backblaze B2 (S3-compatible) object storage
 # --------------------------------------------------------------------------
-# Same bucket / endpoint / credential pattern used across our other
-# applications (e.g. ScienceTech Academy). Accountability documents for
-# KTC-IPFMS are stored in that same bucket, under their own folder prefix
-# ("ktc-documents/<requisition_id>/<uuid>.<ext>") so they never collide with
-# course images, avatars, certificates, etc. from other apps sharing the
-# bucket. User signatures live under their own prefix
-# ("ktc-signatures/<user_id>/<uuid>.<ext>") for the same reason.
 B2_BUCKET_NAME = os.getenv("B2_BUCKET_NAME", "uploads-dir")
 B2_ENDPOINT_URL = os.getenv("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
 B2_KEY_ID = os.getenv("B2_KEY_ID", "0055ca7845641d30000000002")
@@ -94,23 +87,6 @@ ROLES = [
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
 # --------------------------------------------------------------------------
-# IMPORTANT: this is the ONE place amounts (baseline, planned target, Q1-Q4)
-# get turned into a Python float, and it is used at every point a value can
-# enter or leave the system:
-#   - Excel import (values come in as text or native numbers from openpyxl)
-#   - Manual create/update via the API (values come in as JSON — normally a
-#     number, but a client could send a string)
-#   - Every read/response (BudgetCode.allocated_amount /
-#     BudgetCode.available_balance and budget_code_to_out) — so if a row's
-#     underlying value is ever anything other than a clean float (e.g. a
-#     legacy row written before this fix, or a value that reached the DB
-#     through some other path), it is re-interpreted correctly on the way
-#     out instead of silently rendering as 0 or crashing the response.
-#
-# Having ONE parser instead of one at import-time and a different, separate
-# conversion at display-time is deliberate: two independent implementations
-# is exactly how a value can be "fixed" going in but still show wrong going
-# out (or vice-versa).
 _THOUSANDS_SPACE_RE = re.compile(r"(?<=\d)[\s\u00A0\u2009\u202F](?=\d)")
 _AMOUNT_CURRENCY_NOISE = ("UGX", "Ugx", "ugx", "USH", "Ush", "ush", "/=", "=", "%")
 
@@ -146,16 +122,12 @@ def parse_amount_verbose(v):
         negative = True
         s = s[1:].strip()
 
-    # Normalise assorted unicode space characters (non-breaking, thin, etc.)
-    # to plain spaces before we treat them as thousands separators.
     s = s.replace("\u00A0", " ").replace("\u2009", " ").replace("\u202F", " ")
 
     for token in _AMOUNT_CURRENCY_NOISE:
         s = s.replace(token, "")
     s = s.strip()
 
-    # Remove thousands separators: commas, and spaces sitting between digits
-    # (e.g. "1 200 000").
     s = s.replace(",", "")
     s = _THOUSANDS_SPACE_RE.sub("", s)
     s = s.strip()
@@ -200,15 +172,8 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-    # Position (job title) is a free-text field filled in manually by the
-    # administrator when creating the account (e.g. "Senior Accountant",
-    # "Community Development Officer") — it is not tied to a fixed list.
     position = Column(String(150), nullable=True)
     telephone = Column(String(40), nullable=True)
-    # Object key of this user's uploaded signature image inside Backblaze
-    # B2 (e.g. "ktc-signatures/7/9f3c1a2b....png"), or NULL if the user
-    # hasn't uploaded one yet. Stored exactly like accountability document
-    # keys so it can be streamed back out through the same /files route.
     signature_path = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
@@ -232,14 +197,6 @@ class WorkPlan(Base):
 
 
 class BudgetCode(Base):
-    """
-    A single row of the Council's "New Budget Estimates Data Entry Form":
-    Department | Service Area | Programme | Sub Programme | Budget Output
-    Code | Budget Output Description | PIAP Output Description | PIAP
-    Output Indicator | Unit of Measure | Baseline Value | Planned Target |
-    Actual Output | Q1 | Q2 | Q3 | Q4 | Total Budget | Funding Source |
-    Responsible Party
-    """
     __tablename__ = "budget_codes"
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
@@ -255,8 +212,6 @@ class BudgetCode(Base):
     baseline_value = Column(Float, default=0)
     planned_target = Column(Float, default=0)
     actual_output = Column(String(255))
-    # Quarterly planned amounts (UGX) — these replace a single manually
-    # entered "allocated amount"; the total is derived from their sum.
     q1_amount = Column(Float, default=0)
     q2_amount = Column(Float, default=0)
     q3_amount = Column(Float, default=0)
@@ -270,10 +225,6 @@ class BudgetCode(Base):
 
     @property
     def allocated_amount(self):
-        # Defensive: parse_amount() rather than trusting the raw column
-        # value directly. This means a row whose quarterly figures were
-        # ever stored oddly (e.g. non-numeric) still totals correctly
-        # instead of the sum silently excluding it or raising.
         return (
             parse_amount(self.q1_amount) + parse_amount(self.q2_amount) +
             parse_amount(self.q3_amount) + parse_amount(self.q4_amount)
@@ -281,7 +232,6 @@ class BudgetCode(Base):
 
     @property
     def committed_amount(self):
-        # sum of requisitions not rejected/returned
         db = SessionLocal()
         try:
             reqs = db.query(Requisition).filter(
@@ -317,18 +267,10 @@ class Requisition(Base):
     budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     activity_details = Column(Text)
-    # Subject line of the requisition (e.g. "Monitoring roads for 3rd Qtr
-    # works") — shown on the requisition form and in listings.
     subject = Column(String(255), nullable=True)
-    # JSON-encoded list of line items entered via the sectioned line-item
-    # builder in the "New Requisition" modal — each item has item_no,
-    # description, units, qty, rate, amount. amount_requested (below) is
-    # always the sum of these, computed server-side at creation time.
     line_items = Column(Text, nullable=True)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
-    # draft, submitted, hod_approved, treasurer_approved, approved,
-    # rejected, returned, accounting_pending, accounted
     current_stage = Column(String(20), default="hod")  # hod / treasurer / clerk / done
     created_at = Column(DateTime, default=dt.datetime.utcnow)
     updated_at = Column(DateTime, default=dt.datetime.utcnow)
@@ -374,8 +316,6 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
-    # stored_path now holds the Backblaze B2 *object key* (e.g.
-    # "ktc-documents/42/9f3c1a2b....pdf"), not a local filesystem path.
     stored_path = Column(String(500), nullable=False)
     doc_type = Column(String(50), default="supporting")  # supporting / receipt / voucher / attendance / other
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -408,32 +348,20 @@ Base.metadata.create_all(bind=engine)
 
 
 def _run_lightweight_migrations():
-    """
-    Add newly introduced columns to an already-existing database without
-    requiring a full migration tool. Safe to run on every startup: each
-    ALTER is wrapped so a column that already exists (or a backend, like
-    SQLite, that behaves differently) never crashes the app.
-    """
     statements = [
-        # BudgetCode — earlier additions
         "ALTER TABLE budget_codes ADD COLUMN indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN q1_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q2_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q3_amount FLOAT DEFAULT 0",
         "ALTER TABLE budget_codes ADD COLUMN q4_amount FLOAT DEFAULT 0",
-        # BudgetCode — "New Budget Estimates Data Entry Form" fields
         "ALTER TABLE budget_codes ADD COLUMN service_area VARCHAR(150)",
         "ALTER TABLE budget_codes ADD COLUMN piap_output_description VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
-        # Users — Position & Telephone
         "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
-        # Users — Signature (object key of the uploaded signature image)
         "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
-        # Requisitions — Subject & sectioned Line Items (New Requisition
-        # modal / printable form)
         "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
         "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
     ]
@@ -445,9 +373,6 @@ def _run_lightweight_migrations():
             except Exception:
                 conn.rollback()  # column already exists (or backend quirk) — ignore
 
-    # One-time backfill: if a legacy row has data in the old "indicator"
-    # column but nothing in the new "piap_output_indicator" column, copy it
-    # across so nothing already entered is lost.
     try:
         with engine.connect() as conn:
             conn.exec_driver_sql(
@@ -477,9 +402,6 @@ class Token(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
-    # The role the person selected on the "Signing in as" dropdown. Optional
-    # for backwards compatibility (e.g. API clients that don't send it), but
-    # when present it must match the account's actual role.
     role: Optional[str] = None
 
 
@@ -542,9 +464,6 @@ class BudgetCodeIn(BaseModel):
     piap_output_description: Optional[str] = None
     piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
-    # Accept a number OR text: the form always sends a clean number, but any
-    # other API client might send "1,200,000" — parse_amount() in the
-    # endpoint below handles either.
     baseline_value: Union[float, int, str] = 0
     planned_target: Union[float, int, str] = 0
     actual_output: Optional[str] = None
@@ -557,9 +476,6 @@ class BudgetCodeIn(BaseModel):
 
 
 class BudgetCodeUpdate(BaseModel):
-    """Partial update — every field optional, only what's sent gets changed.
-    Lets an admin correct a specific row (e.g. one that was zeroed out by an
-    earlier bad import) without deleting and recreating it."""
     service_area: Optional[str] = None
     code: Optional[str] = None
     output_description: Optional[str] = None
@@ -612,6 +528,7 @@ class BudgetCodeOut(BaseModel):
 class BudgetCodeImportResult(BaseModel):
     created: int
     skipped: int
+    departments_created: int = 0
     errors: List[str] = []
 
 
@@ -629,11 +546,6 @@ class ActivityOut(ActivityIn):
 
 
 class RequisitionLineItemIn(BaseModel):
-    """One row from the sectioned line-item builder in the 'New
-    Requisition' modal. A section header row (e.g. '01 Field fuel') and its
-    priced lines all share the same item_no; qty/rate are optional since
-    some lines (facilitation, transport, etc.) have their amount typed in
-    directly rather than computed from qty x rate."""
     item_no: int
     description: str
     units: Optional[str] = None
@@ -736,13 +648,8 @@ def notify_role(db: Session, role: str, message: str, category: str = "info", re
 # --------------------------------------------------------------------------
 # Backblaze B2 storage helpers
 # --------------------------------------------------------------------------
-# Mirrors the upload/delete pattern used in our other apps: object keys are
-# namespaced under a folder prefix, content is streamed straight into the
-# bucket, and errors are surfaced as clean HTTP 500s rather than raw
-# botocore exceptions.
 
 async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
-    """Upload an accountability document to Backblaze B2 and return its object key."""
     try:
         ext = os.path.splitext(file.filename or "")[1].lower()
         key = f"{B2_DOCUMENTS_FOLDER}/{requisition_id}/{uuid.uuid4().hex}{ext}"
@@ -761,7 +668,6 @@ async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
 
 
 async def upload_signature_to_b2(file: UploadFile, user_id: int) -> str:
-    """Upload a user's signature image to Backblaze B2 and return its object key."""
     try:
         ext = os.path.splitext(file.filename or "")[1].lower()
         key = f"{B2_SIGNATURES_FOLDER}/{user_id}/{uuid.uuid4().hex}{ext}"
@@ -784,7 +690,6 @@ def delete_document_from_b2(key: str):
         b2_client.delete_object(Bucket=B2_BUCKET_NAME, Key=key)
         logger.info(f"Document deleted from B2: {key}")
     except Exception as e:
-        # Never let a storage cleanup failure break the calling request.
         logger.warning(f"Error deleting document from B2: {e}")
 
 
@@ -805,21 +710,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 def seed_data():
-    """
-    Idempotent startup seeding.
-
-    IMPORTANT: this must never crash the app. Earlier versions gated seeding
-    purely on `User.count() == 0`, which is unsafe: if a prior deploy created
-    the Department row but then failed/restarted before the User row was
-    committed (or if the users table was ever cleared independently of
-    departments), the count-based check becomes true again and the app tries
-    to re-insert a Department with a name that already has a UNIQUE
-    constraint on it -> IntegrityError -> "Application startup failed."
-
-    Fix: look up each seed row by its natural/unique key first (get-or-create)
-    instead of relying on a derived count, and wrap the whole routine in a
-    try/except so a seeding hiccup never takes the whole API down.
-    """
     db = SessionLocal()
     try:
         admin_email = os.getenv("ADMIN_EMAIL", "admin@karugutu.town.go.ug")
@@ -827,11 +717,8 @@ def seed_data():
         default_dept_name = "Administration and Support Services"
         default_dept_code = "ADM"
 
-        # 1) Get-or-create the default department by its unique name.
         dep = db.query(Department).filter(Department.name == default_dept_name).first()
         if not dep:
-            # Also guard against the code already existing under a
-            # different name (code is unique too).
             dep = db.query(Department).filter(Department.code == default_dept_code).first()
         if not dep:
             dep = Department(name=default_dept_name, code=default_dept_code)
@@ -840,11 +727,9 @@ def seed_data():
                 db.commit()
                 db.refresh(dep)
             except IntegrityError:
-                # Another worker/process created it concurrently — fetch it.
                 db.rollback()
                 dep = db.query(Department).filter(Department.name == default_dept_name).first()
 
-        # 2) Get-or-create the admin user by its unique email.
         existing_admin = db.query(User).filter(User.email == admin_email).first()
         if not existing_admin:
             admin = User(
@@ -878,10 +763,6 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been deactivated")
-    # If the person selected a role on the "Signing in as" dropdown, make
-    # sure it actually matches the account's role. This catches the common
-    # mistake of, say, a Head of Department selecting "Staff Member" and
-    # then being confused about missing approval permissions.
     if payload.role and payload.role != user.role:
         raise HTTPException(
             status_code=401,
@@ -939,11 +820,6 @@ def toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User 
 
 
 # ---------------------------- User Signatures -------------------------------
-# Every user manages their OWN signature (stored under their account, in
-# their personal "settings"). It is uploaded once here and, from then on,
-# automatically attached wherever that user's name appears on a printed
-# requisition form — as the requester, or as the HOD/Treasurer/Clerk who
-# actioned an approval stage — with no per-requisition action needed.
 
 _ALLOWED_SIGNATURE_EXT = {".png", ".jpg", ".jpeg"}
 
@@ -961,9 +837,6 @@ async def upload_my_signature(file: UploadFile = File(...), db: Session = Depend
     db.commit()
     db.refresh(user)
 
-    # Clean up the previous signature image only after the new one is
-    # safely committed, so a failed upload never leaves the user with no
-    # signature at all.
     if old_path:
         delete_document_from_b2(old_path)
 
@@ -1028,11 +901,6 @@ def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: U
 # ---------------------------- Budget Codes ----------------------------------
 
 def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
-    # Every numeric field is re-parsed with parse_amount() here rather than
-    # trusted as-is. This is what makes the fix "self-healing": even a row
-    # whose q1-q4/baseline/target ended up stored oddly for any reason will
-    # display correctly on every read from now on, with no need to touch
-    # the database directly or re-import the source workbook.
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=bc.department.name if bc.department else None,
@@ -1087,14 +955,6 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
 @app.patch("/api/budget-codes/{bc_id}", response_model=BudgetCodeOut)
 def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depends(get_db),
                         admin: User = Depends(require_roles("admin"))):
-    """
-    Correct a single budget code row directly — in particular, this is the
-    fix for rows that were already zeroed out by an earlier bad import: the
-    parsing fix in /api/budget-codes/import only protects *future* imports,
-    it cannot retroactively recover a value that was already overwritten
-    with 0 in the database. Use this endpoint (or re-import the same source
-    workbook) to put the correct figure back.
-    """
     bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
     if not bc:
         raise HTTPException(status_code=404, detail="Budget code not found")
@@ -1111,18 +971,33 @@ def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depe
 
 
 # ---- Excel import ----------------------------------------------------------
-# Expected column headers (case-insensitive, order-independent) on the first
-# worksheet, row 1:
-#   Department, Service Area, Programme, Sub Programme, Budget Output Code,
-#   Budget Output Description, PIAP Output Description, PIAP Output
-#   Indicator, Unit of Measure, Baseline Value, Planned Target, Actual
-#   Output, Q1 (UGX), Q2 (UGX), Q3 (UGX), Q4 (UGX), Funding Source,
-#   Responsible Party
-# "Department" is matched against existing department names (case
-# insensitive); a department that doesn't exist yet is skipped with an
-# error message rather than silently dropped, so the user knows to create
-# it (or fix a typo) first. "Total Budget (UGX)" is ignored if present,
-# since it is always recomputed as Q1+Q2+Q3+Q4.
+#
+# FIXES APPLIED IN THIS VERSION (see inline comments below for details):
+#
+#   1. Header matching now collapses ALL whitespace (including embedded
+#      newlines, e.g. "Q1 \n(UGX)" as produced by Excel's alt-enter line
+#      wraps in a header cell) before comparing against the alias table.
+#      Previously "Q1 \n(UGX)".strip().lower() == "q1 \n(ugx)", which never
+#      matched the "q1 (ugx)" alias key, so Q1-Q4 (and therefore the derived
+#      Total Budget) were silently mapped to nothing and always stored as 0
+#      — regardless of what was actually typed in the workbook.
+#
+#   2. Department matching is now tolerant of "&" vs "and", extra spacing,
+#      and case differences (the same council's own workbook mixes
+#      "Administration and Support Services" and "Administration & Support
+#      Services" across rows). A department that still can't be matched
+#      after normalising is auto-created (import is admin-only, so this is
+#      safe) instead of the row being silently skipped — this is what was
+#      causing "only one department imported, everything after is left
+#      out": once the normalized name stopped matching, every remaining row
+#      in the workbook (including new departments and quarter figures) was
+#      rejected as "department not found".
+#
+#   3. Rows that are not real data — repeated header rows (Excel workbooks
+#      exported per-page often repeat the header every ~15-20 rows) and
+#      "Sub Total"/"Total" summary rows — are now recognised and skipped
+#      quietly (not counted as warnings/errors), instead of being reported
+#      as confusing "department not found" errors.
 
 _IMPORT_COLUMN_ALIASES = {
     "department": "department",
@@ -1147,14 +1022,13 @@ _IMPORT_COLUMN_ALIASES = {
     "q2(ugx)": "q2_amount", "q2 (ugx)": "q2_amount", "q2": "q2_amount",
     "q3(ugx)": "q3_amount", "q3 (ugx)": "q3_amount", "q3": "q3_amount",
     "q4(ugx)": "q4_amount", "q4 (ugx)": "q4_amount", "q4": "q4_amount",
+    "total budget (ugx)": "_total_budget_ignored",
+    "total budget": "_total_budget_ignored",
     "funding source": "funding_source",
     "revenue source": "funding_source",
     "responsible party": "responsible_party",
 }
 
-# Human-friendly labels used only for error/warning messages surfaced back
-# to the person importing the workbook, so a bad cell can be traced back to
-# exactly which column produced it.
 _NUMERIC_FIELD_LABELS = {
     "baseline_value": "Baseline Value",
     "planned_target": "Planned Target",
@@ -1163,6 +1037,60 @@ _NUMERIC_FIELD_LABELS = {
     "q3_amount": "Q3 (UGX)",
     "q4_amount": "Q4 (UGX)",
 }
+
+# Collapses ANY run of whitespace — spaces, tabs, and (crucially) the
+# embedded newlines Excel inserts when a header cell uses alt-enter line
+# wraps, e.g. "Q1 \n(UGX)" — down to a single space, so header text always
+# normalises to the same key regardless of how it was line-wrapped in the
+# source spreadsheet.
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_header_key(h) -> str:
+    if h is None:
+        return ""
+    return _WHITESPACE_RE.sub(" ", str(h)).strip().lower()
+
+
+# Normalises a department name for matching: case-insensitive, "&" treated
+# the same as "and", and all whitespace collapsed. This is what lets
+# "Administration & Support Services" match an existing department already
+# stored as "Administration and Support Services".
+def _normalize_dept_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    n = _WHITESPACE_RE.sub(" ", str(name)).strip().lower()
+    n = re.sub(r"\s*&\s*", " and ", n)
+    n = _WHITESPACE_RE.sub(" ", n).strip()
+    return n
+
+
+# Rows whose "Department" cell is one of these (after normalising) are not
+# real budget entries — they're page-footer subtotal/total rows carried
+# over from the source workbook's print layout — and should be skipped
+# quietly rather than reported as import errors.
+_SUBTOTAL_MARKERS = {"sub total", "subtotal", "total", "grand total"}
+
+
+def _generate_department_code(name: str, existing_codes: set) -> str:
+    """Best-effort short code derived from a department's name, for when a
+    brand-new department has to be auto-created during import (the source
+    workbook only carries the name, not a short code). Falls back to a
+    numbered suffix if the derived code collides with one already in use."""
+    words = re.findall(r"[A-Za-z0-9]+", name or "")
+    if not words:
+        base = "DEPT"
+    else:
+        base = "".join(w[0] for w in words[:6]).upper()
+        if len(base) < 2:
+            base = (words[0][:4]).upper()
+    base = base[:12] or "DEPT"
+    code = base
+    n = 1
+    while code in existing_codes:
+        n += 1
+        code = f"{base}{n}"
+    return code
 
 
 @app.post("/api/budget-codes/import", response_model=BudgetCodeImportResult)
@@ -1203,12 +1131,16 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     if not rows:
         raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
 
-    header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
+    # FIX (1): normalize header text (collapsing embedded newlines like the
+    # "Q1 \n(UGX)" case) before looking it up in the alias table.
+    header = [_normalize_header_key(h) for h in rows[0]]
     col_map = {}  # column index -> field name
     for idx, h in enumerate(header):
         field = _IMPORT_COLUMN_ALIASES.get(h)
         if field:
             col_map[idx] = field
+    dept_col_idx = next((idx for idx, f in col_map.items() if f == "department"), None)
+    code_col_idx = next((idx for idx, f in col_map.items() if f == "code"), None)
 
     if "output_description" not in col_map.values() or "code" not in col_map.values():
         raise HTTPException(
@@ -1216,17 +1148,18 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             detail="The workbook must at least include 'Budget Output Code' and 'Budget Output Description' columns"
         )
 
-    departments_by_name = {d.name.strip().lower(): d for d in db.query(Department).all()}
+    # FIX (2): build the department lookup keyed by a normalized name (case
+    # / "&" vs "and" / whitespace insensitive) so workbook rows using either
+    # spelling resolve to the same existing department.
+    all_departments = db.query(Department).all()
+    departments_by_normalized_name = {_normalize_dept_name(d.name): d for d in all_departments}
+    existing_dept_codes = {d.code for d in all_departments}
+    departments_created = 0
 
     created = 0
     skipped = 0
     errors: List[str] = []
 
-    # Numeric cells go through the single shared parse_amount_verbose() —
-    # the same parser used for manual create/update and for every read —
-    # so import, entry, and display can never drift out of sync again. The
-    # only import-specific behaviour is turning a failed parse into a
-    # visible warning instead of a silent zero.
     def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None):
         value, ok, original = parse_amount_verbose(v)
         if not ok and row_warnings is not None:
@@ -1241,15 +1174,26 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None or all(c is None or str(c).strip() == "" for c in row):
             continue  # blank row
+
         data = {}
         for idx, field in col_map.items():
             data[field] = row[idx] if idx < len(row) else None
 
-        dept_name = _text(data.get("department"))
-        dept = departments_by_name.get(dept_name.lower()) if dept_name else None
-        if not dept:
-            skipped += 1
-            errors.append(f"Row {row_idx}: department '{dept_name or ''}' was not found — skipped")
+        dept_name_raw = _text(data.get("department"))
+
+        # FIX (3a): silently skip repeated header rows. These occur when the
+        # source workbook was formatted for printing and the header row was
+        # repeated every page; the whole row (department/code/etc.) matches
+        # the actual header text, so it is not a data row at all.
+        raw_dept_cell = row[dept_col_idx] if dept_col_idx is not None and dept_col_idx < len(row) else None
+        raw_code_cell = row[code_col_idx] if code_col_idx is not None and code_col_idx < len(row) else None
+        if _normalize_header_key(raw_dept_cell) == "department" or _normalize_header_key(raw_code_cell) == "budget output code":
+            continue
+
+        # FIX (3b): silently skip "Sub Total" / "Total" summary rows carried
+        # over from the workbook's print layout — these aren't real budget
+        # output entries and have no code/description of their own.
+        if _normalize_dept_name(dept_name_raw) in _SUBTOTAL_MARKERS:
             continue
 
         code = _text(data.get("code"))
@@ -1258,6 +1202,39 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             skipped += 1
             errors.append(f"Row {row_idx}: missing Budget Output Code or Description — skipped")
             continue
+
+        if not dept_name_raw:
+            skipped += 1
+            errors.append(f"Row {row_idx}: no department specified — skipped")
+            continue
+
+        normalized_dept = _normalize_dept_name(dept_name_raw)
+        dept = departments_by_normalized_name.get(normalized_dept)
+        if not dept:
+            # FIX (2): auto-create rather than skip, so a legitimately new
+            # or differently-spelled department doesn't cause every
+            # subsequent row for it (and everything after, in a mixed
+            # workbook) to be silently dropped. Import is admin-only, so
+            # creating departments on the fly here is safe.
+            new_code = _generate_department_code(dept_name_raw, existing_dept_codes)
+            dept = Department(name=dept_name_raw.strip(), code=new_code)
+            db.add(dept)
+            try:
+                db.commit()
+                db.refresh(dept)
+            except IntegrityError:
+                db.rollback()
+                # Someone/something else created a matching department
+                # concurrently (or a code collision) — re-resolve by name.
+                dept = db.query(Department).filter(Department.name == dept_name_raw.strip()).first()
+                if not dept:
+                    skipped += 1
+                    errors.append(f"Row {row_idx}: could not create or match department '{dept_name_raw}' — skipped")
+                    continue
+            existing_dept_codes.add(dept.code)
+            departments_by_normalized_name[normalized_dept] = dept
+            departments_created += 1
+            errors.append(f"Row {row_idx}: department '{dept_name_raw}' was not found and has been created automatically")
 
         row_warnings: List[str] = []
 
@@ -1288,8 +1265,9 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
 
     db.commit()
     log_action(db, admin.id, "budget_code.import",
-               f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)")
-    return BudgetCodeImportResult(created=created, skipped=skipped, errors=errors[:20])
+               f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} "
+               f"({skipped} skipped, {departments_created} department(s) auto-created)")
+    return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=departments_created, errors=errors[:30])
 
 
 # ---------------------------- Activities ------------------------------------
@@ -1321,9 +1299,6 @@ def gen_ref_no(db: Session) -> str:
 
 
 def _parse_requisition_line_items(raw: Optional[str]) -> list:
-    """Line items are stored as a JSON-encoded string; this always returns
-    a list (empty if there's nothing stored / it can't be parsed) so
-    callers never have to special-case None or bad JSON."""
     if not raw:
         return []
     try:
@@ -1339,8 +1314,6 @@ def requisition_to_dict(r: Requisition) -> dict:
         "ref_no": r.ref_no,
         "requester_id": r.requester_id,
         "requester_name": r.requester.full_name if r.requester else None,
-        # The requester's own signature, attached automatically wherever
-        # this requisition is printed — no per-form action needed.
         "requester_signature_url": r.requester.signature_url if r.requester else None,
         "department_id": r.department_id,
         "department_name": r.department.name if r.department else None,
@@ -1361,18 +1334,11 @@ def requisition_to_dict(r: Requisition) -> dict:
             {
                 "stage": a.stage, "actor": a.actor.full_name if a.actor else None,
                 "action": a.action, "comments": a.comments,
-                # The approving officer's signature, for this specific
-                # approval action — used to stamp the correct signature
-                # into the matching block of the printed form.
                 "actor_signature_url": a.actor.signature_url if a.actor else None,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             } for a in r.approvals
         ],
         "documents": [
-            # d.stored_path is the Backblaze B2 object key. The /files
-            # route below streams the object straight out of B2, so the
-            # frontend's existing "${API_BASE}${d.url}" link pattern keeps
-            # working unchanged.
             {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{d.stored_path}"}
             for d in r.documents
         ],
@@ -1447,7 +1413,6 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
 
 
 def _submit_requisition(r: Requisition, db: Session, user: User):
-    # Budget validation
     bc = r.budget_code
     if r.activity_id:
         act = db.query(Activity).filter(Activity.id == r.activity_id, Activity.budget_code_id == bc.id).first()
@@ -1506,18 +1471,11 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     db.add(history)
 
     if payload.action == "approve":
-        # re-verify budget at treasurer stage
         if stage == "treasurer" and r.budget_code.available_balance < 0:
             raise HTTPException(status_code=400, detail="Budget has since been exhausted for this code")
         r.status = STAGE_STATUS[stage]
         nxt = NEXT_STAGE[stage]
         if nxt == "done":
-            # Fully approved: the requisition now sits on the internal
-            # auditor's wall pending accountability documents (this is
-            # exactly the "pending until all accountability documents are
-            # uploaded, including the payment voucher" behaviour) — an
-            # AccountabilityRecord is created in "pending" status and only
-            # moves to "verified" once the auditor reviews the uploads.
             r.current_stage = "done"
             r.status = "approved"
             acc = AccountabilityRecord(requisition_id=r.id, status="pending")
@@ -1572,14 +1530,6 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
     if not r:
         raise HTTPException(status_code=404, detail="Requisition not found")
 
-    # Accountability documents can only be attached once the requisition has
-    # cleared full approval (i.e. an AccountabilityRecord exists for it), and
-    # only by the staff member/project officer responsible for the requisition
-    # (or an administrator). This matches the intended workflow: the auditor
-    # reviews what has been uploaded, they do not upload on the requester's
-    # behalf. The requisition stays on the internal auditor's wall until
-    # every required accountability document — including the payment
-    # voucher — has been uploaded and the auditor marks it verified.
     if not r.accountability:
         raise HTTPException(
             status_code=400,
@@ -1605,8 +1555,6 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
                     doc_type=doc_type, uploaded_by=user.id)
     db.add(doc)
 
-    # If a previous auditor review had flagged this requisition, a fresh
-    # upload puts it back into "pending" so the auditor knows to re-review it.
     if r.accountability.status == "flagged":
         r.accountability.status = "pending"
 
@@ -1618,17 +1566,6 @@ async def upload_document(req_id: int, doc_type: str = "supporting", file: Uploa
 
 @app.get("/files/{filename:path}")
 async def stream_document(filename: str, request: Request, db: Session = Depends(get_db)):
-    """
-    Stream an accountability document (or a user's signature image) straight
-    out of Backblaze B2.
-
-    Files are addressed by their B2 object key (e.g.
-    "ktc-documents/42/9f3c1a2b....pdf" or "ktc-signatures/7/ab12....png")
-    and proxied here rather than served from local disk, so uploads survive
-    redeploys and restarts. HTTP Range requests are honoured so
-    PDFs/images preview quickly in the browser instead of having to
-    download in full first.
-    """
     clean_key = filename.split("?")[0].strip("/")
     if not clean_key:
         raise HTTPException(status_code=400, detail="Filename is required")
@@ -1712,11 +1649,6 @@ def update_accountability(req_id: int, payload: AccountabilityIn,
     if not r or not r.accountability:
         raise HTTPException(status_code=404, detail="No accountability record found for this requisition")
 
-    # Hard server-side gate: a requisition stays on the internal auditor's
-    # wall until every required accountability document — including the
-    # Payment Voucher — has actually been uploaded. The auditor cannot mark
-    # a requisition "verified" without documents attached, regardless of
-    # what the client sends.
     if payload.status == "verified":
         if not r.documents:
             raise HTTPException(
