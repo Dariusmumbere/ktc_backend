@@ -201,23 +201,33 @@ class BudgetCode(Base):
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
-    service_area = Column(String(150))
+    # These are free-text narrative fields copied verbatim from Council
+    # work-plan workbooks, which routinely run well past 255 characters
+    # (e.g. a "Budget Output Description" of 400+ characters is normal for
+    # this dataset) — stored as Text (unbounded) rather than a bounded
+    # VARCHAR so a long but perfectly legitimate description never causes
+    # the whole import batch to fail with a Postgres
+    # StringDataRightTruncation error.
+    service_area = Column(Text)
     code = Column(String(30), nullable=False)                  # Budget Output Code
-    output_description = Column(String(255), nullable=False)   # Budget Output Description
-    programme = Column(String(150))
-    sub_programme = Column(String(150))
-    piap_output_description = Column(String(255))
-    piap_output_indicator = Column(String(255))
-    unit_of_measure = Column(String(50))
+    output_description = Column(Text, nullable=False)          # Budget Output Description
+    programme = Column(Text)
+    sub_programme = Column(Text)
+    piap_output_description = Column(Text)
+    piap_output_indicator = Column(Text)
+    unit_of_measure = Column(String(100))
     baseline_value = Column(Float, default=0)
     planned_target = Column(Float, default=0)
-    actual_output = Column(String(255))
+    actual_output = Column(Text)
     q1_amount = Column(Float, default=0)
     q2_amount = Column(Float, default=0)
     q3_amount = Column(Float, default=0)
     q4_amount = Column(Float, default=0)
-    funding_source = Column(String(100), default="Local Revenue")  # Revenue Source
-    responsible_party = Column(String(150))
+    funding_source = Column(String(255), default="Local Revenue")  # Revenue Source
+    # Often a multi-line list of several named officers/committees in
+    # practice (e.g. "Town Mayor, Town Clerk, LCII Chairpersons, Ward
+    # Development Committees, Clerk to Council") — Text avoids truncation.
+    responsible_party = Column(Text)
 
     work_plan = relationship("WorkPlan", back_populates="budget_codes")
     department = relationship("Department", back_populates="budget_codes")
@@ -364,6 +374,23 @@ def _run_lightweight_migrations():
         "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
         "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
         "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
+        # Widen narrative BudgetCode columns on an already-deployed Postgres
+        # database from bounded VARCHAR to unbounded TEXT, so long but
+        # legitimate descriptions from imported work-plan workbooks (e.g.
+        # 400+ character Budget Output Descriptions) stop being rejected
+        # with a StringDataRightTruncation error. These are Postgres-only
+        # syntax and simply fail harmlessly (caught below) against SQLite,
+        # which doesn't enforce VARCHAR length limits in the first place.
+        "ALTER TABLE budget_codes ALTER COLUMN service_area TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN output_description TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN programme TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN sub_programme TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN piap_output_description TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN piap_output_indicator TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN actual_output TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN responsible_party TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN unit_of_measure TYPE VARCHAR(100)",
+        "ALTER TABLE budget_codes ALTER COLUMN funding_source TYPE VARCHAR(255)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
