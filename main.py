@@ -2,6 +2,7 @@ import os
 import io
 import re
 import json
+import time
 import uuid
 import logging
 import datetime as dt
@@ -16,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean, DateTime,
-    ForeignKey, Text, Enum as SAEnum
+    ForeignKey, Text, Enum as SAEnum, func
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
@@ -83,6 +84,55 @@ ROLES = [
     "clerk",       # Town Clerk
     "auditor",     # Internal Auditor
 ]
+
+# --------------------------------------------------------------------------
+# Lightweight in-memory response cache
+# --------------------------------------------------------------------------
+# The Work Plan & Budget table was slow to render because every request
+# recomputed committed/available balances with a fresh DB round-trip PER
+# ROW (see the old BudgetCode.committed_amount property, which opened a new
+# SessionLocal() session per budget code — an N+1 query pattern). Two things
+# fix this:
+#   1. list_budget_codes now computes committed amounts for the whole page
+#      in a single grouped query (see _bulk_committed_amounts) instead of
+#      one query per row.
+#   2. The fully-serialised response for a given (work_plan_id,
+#      department_id, search) combination is cached in memory for a short
+#      TTL, so repeat requests (e.g. re-opening the Work Plan & Budget tab,
+#      or switching between filters that were already viewed) are served
+#      instantly without touching the database at all.
+# The cache is invalidated proactively whenever the underlying data changes
+# (budget code create/update/import, requisition submit/approve/reject,
+# department or work plan creation), so results never go stale beyond
+# that TTL by more than the time it takes those write paths to run.
+_CACHE_TTL_SECONDS = 90
+_response_cache: dict = {}
+
+
+def _cache_get(key: str):
+    entry = _response_cache.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if time.time() - ts > _CACHE_TTL_SECONDS:
+        _response_cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: str, value):
+    _response_cache[key] = (time.time(), value)
+
+
+def _cache_invalidate_prefix(prefix: str):
+    for k in [k for k in _response_cache if k.startswith(prefix)]:
+        _response_cache.pop(k, None)
+
+
+def _invalidate_budget_code_caches():
+    _cache_invalidate_prefix("budget_codes:")
+    _cache_invalidate_prefix("dashboard_stats:")
+
 
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
@@ -242,6 +292,11 @@ class BudgetCode(Base):
 
     @property
     def committed_amount(self):
+        # NOTE: kept for any callers that need a single budget code's
+        # committed amount in isolation. Bulk endpoints (list_budget_codes,
+        # dashboard_stats) should use _bulk_committed_amounts() instead to
+        # avoid the N+1 query pattern this property has when used per-row
+        # in a loop.
         db = SessionLocal()
         try:
             reqs = db.query(Requisition).filter(
@@ -271,13 +326,14 @@ class Activity(Base):
 class Requisition(Base):
     __tablename__ = "requisitions"
     id = Column(Integer, primary_key=True, index=True)
-    ref_no = Column(String(40), unique=True, nullable=False)
+    ref_no = Column(String(60), unique=True, nullable=False)
     requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     activity_details = Column(Text)
     subject = Column(String(255), nullable=True)
+    payment_voucher_number = Column(String(100), nullable=True)
     line_items = Column(Text, nullable=True)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
@@ -374,6 +430,11 @@ def _run_lightweight_migrations():
         "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
         "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
         "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
+        "ALTER TABLE requisitions ADD COLUMN payment_voucher_number VARCHAR(100)",
+        # ref_no used to be capped at 40 chars ("KTC-REQ-YYYY-00001"); the new
+        # "KTC-RQ-YY-MM-DD-<payment voucher number>" format can run longer
+        # depending on what the PV number looks like, so widen the column.
+        "ALTER TABLE requisitions ALTER COLUMN ref_no TYPE VARCHAR(60)",
         # Widen narrative BudgetCode columns on an already-deployed Postgres
         # database from bounded VARCHAR to unbounded TEXT, so long but
         # legitimate descriptions from imported work-plan workbooks (e.g.
@@ -585,6 +646,7 @@ class RequisitionIn(BaseModel):
     budget_code_id: int
     activity_id: Optional[int] = None
     subject: str
+    payment_voucher_number: str
     line_items: List[RequisitionLineItemIn]
 
 
@@ -905,6 +967,7 @@ def create_department(payload: DepartmentIn, db: Session = Depends(get_db), admi
         raise HTTPException(status_code=400, detail="Department name or code already exists")
     db.refresh(dep)
     log_action(db, admin.id, "department.create", dep.name)
+    _invalidate_budget_code_caches()
     return dep
 
 
@@ -922,12 +985,15 @@ def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: U
     db.commit()
     db.refresh(wp)
     log_action(db, admin.id, "workplan.create", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
     return wp
 
 
 # ---------------------------- Budget Codes ----------------------------------
 
-def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
+def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
+    allocated = bc.allocated_amount
+    committed = committed_override if committed_override is not None else bc.committed_amount
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=bc.department.name if bc.department else None,
@@ -943,15 +1009,39 @@ def budget_code_to_out(bc: BudgetCode) -> BudgetCodeOut:
         q3_amount=parse_amount(bc.q3_amount), q4_amount=parse_amount(bc.q4_amount),
         funding_source=bc.funding_source,
         responsible_party=bc.responsible_party,
-        allocated_amount=bc.allocated_amount, committed_amount=bc.committed_amount,
-        available_balance=bc.available_balance,
+        allocated_amount=allocated, committed_amount=committed,
+        available_balance=allocated - committed,
     )
+
+
+def _bulk_committed_amounts(db: Session, budget_code_ids: List[int]) -> dict:
+    """Committed amount (sum of non-draft/rejected/returned requisitions)
+    for a whole batch of budget codes in a single grouped query, instead of
+    one query per budget code. This is the main fix for the Work Plan &
+    Budget table being slow to load with many rows."""
+    if not budget_code_ids:
+        return {}
+    rows = (
+        db.query(Requisition.budget_code_id, func.sum(Requisition.amount_requested))
+        .filter(
+            Requisition.budget_code_id.in_(budget_code_ids),
+            Requisition.status.notin_(["rejected", "returned", "draft"]),
+        )
+        .group_by(Requisition.budget_code_id)
+        .all()
+    )
+    return {bc_id: (amt or 0.0) for bc_id, amt in rows}
 
 
 @app.get("/api/budget-codes", response_model=List[BudgetCodeOut])
 def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optional[int] = None,
                        search: Optional[str] = None,
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    cache_key = f"budget_codes:{work_plan_id}:{department_id}:{(search or '').strip().lower()}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     q = db.query(BudgetCode)
     if work_plan_id:
         q = q.filter(BudgetCode.work_plan_id == work_plan_id)
@@ -960,7 +1050,13 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
     if search:
         like = f"%{search}%"
         q = q.filter(BudgetCode.output_description.ilike(like) | BudgetCode.code.ilike(like))
-    return [budget_code_to_out(bc) for bc in q.order_by(BudgetCode.code).all()]
+    codes = q.order_by(BudgetCode.code).all()
+
+    committed_map = _bulk_committed_amounts(db, [bc.id for bc in codes])
+    result = [budget_code_to_out(bc, committed_map.get(bc.id, 0.0)) for bc in codes]
+
+    _cache_set(cache_key, result)
+    return result
 
 
 _BUDGET_CODE_NUMERIC_FIELDS = ("baseline_value", "planned_target", "q1_amount", "q2_amount", "q3_amount", "q4_amount")
@@ -976,6 +1072,7 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
     db.commit()
     db.refresh(bc)
     log_action(db, admin.id, "budget_code.create", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
     return budget_code_to_out(bc)
 
 
@@ -994,6 +1091,7 @@ def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depe
     db.commit()
     db.refresh(bc)
     log_action(db, admin.id, "budget_code.update", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
     return budget_code_to_out(bc)
 
 
@@ -1294,6 +1392,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     log_action(db, admin.id, "budget_code.import",
                f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} "
                f"({skipped} skipped, {departments_created} department(s) auto-created)")
+    _invalidate_budget_code_caches()
     return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=departments_created, errors=errors[:30])
 
 
@@ -1319,10 +1418,26 @@ def create_activity(payload: ActivityIn, db: Session = Depends(get_db), admin: U
 
 # ---------------------------- Requisitions ----------------------------------
 
-def gen_ref_no(db: Session) -> str:
-    year = dt.datetime.utcnow().year
-    count = db.query(Requisition).count() + 1
-    return f"KTC-REQ-{year}-{count:05d}"
+def gen_ref_no(db: Session, payment_voucher_number: str) -> str:
+    """Reference number format: KTC-RQ-YY-MM-DD-<Payment Voucher Number>.
+
+    The payment voucher number is whitespace-stripped and upper-cased for
+    consistency; if the resulting reference collides with an existing one
+    (e.g. two requisitions raised against the same PV number on the same
+    day), a numeric suffix is appended so ref_no stays unique.
+    """
+    now = dt.datetime.utcnow()
+    yy = now.strftime("%y")
+    mm = now.strftime("%m")
+    dd = now.strftime("%d")
+    pv_clean = re.sub(r"\s+", "", (payment_voucher_number or "").strip()).upper() or "NA"
+    base = f"KTC-RQ-{yy}-{mm}-{dd}-{pv_clean}"
+    ref_no = base
+    suffix = 1
+    while db.query(Requisition).filter(Requisition.ref_no == ref_no).first():
+        suffix += 1
+        ref_no = f"{base}-{suffix}"
+    return ref_no
 
 
 def _parse_requisition_line_items(raw: Optional[str]) -> list:
@@ -1351,6 +1466,7 @@ def requisition_to_dict(r: Requisition) -> dict:
         "activity_name": r.activity.name if r.activity else None,
         "activity_details": r.activity_details,
         "subject": r.subject,
+        "payment_voucher_number": r.payment_voucher_number,
         "line_items": _parse_requisition_line_items(r.line_items),
         "amount_requested": r.amount_requested,
         "status": r.status,
@@ -1409,6 +1525,9 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
     if not bc:
         raise HTTPException(status_code=400, detail="Selected budget code does not exist")
 
+    if not payload.payment_voucher_number or not payload.payment_voucher_number.strip():
+        raise HTTPException(status_code=400, detail="Please provide the Payment Voucher Number")
+
     if not payload.line_items:
         raise HTTPException(status_code=400, detail="Please add at least one line item")
 
@@ -1417,12 +1536,13 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
         raise HTTPException(status_code=400, detail="Please add at least one priced line item")
 
     r = Requisition(
-        ref_no=gen_ref_no(db),
+        ref_no=gen_ref_no(db, payload.payment_voucher_number),
         requester_id=user.id,
         department_id=user.department_id or bc.department_id,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
         subject=payload.subject,
+        payment_voucher_number=payload.payment_voucher_number.strip(),
         line_items=json.dumps([li.dict() for li in payload.line_items]),
         amount_requested=total,
         status="draft",
@@ -1436,6 +1556,7 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
         _submit_requisition(r, db, user)
 
     log_action(db, user.id, "requisition.create", r.ref_no)
+    _invalidate_budget_code_caches()
     return requisition_to_dict(r)
 
 
@@ -1455,6 +1576,7 @@ def _submit_requisition(r: Requisition, db: Session, user: User):
     r.updated_at = dt.datetime.utcnow()
     db.commit()
     notify_role(db, "hod", f"New requisition {r.ref_no} awaiting your approval", "approval_request", r.id)
+    _invalidate_budget_code_caches()
 
 
 @app.post("/api/requisitions/{req_id}/submit")
@@ -1529,6 +1651,7 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     r.updated_at = dt.datetime.utcnow()
     db.commit()
     log_action(db, user.id, f"requisition.{payload.action}", f"{r.ref_no} at stage {stage}")
+    _invalidate_budget_code_caches()
     return requisition_to_dict(r)
 
 
@@ -1750,6 +1873,14 @@ def mark_all_read(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @app.get("/api/dashboard/stats")
 def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Personal/role-scoped counters are cheap and always fresh (they depend
+    # on who's asking), so they're computed directly. The heavier,
+    # role-independent part of this payload — total budget, utilisation,
+    # and the per-department chart data — is cached, since it is identical
+    # for every viewer and was previously the slow part of this endpoint
+    # (it used to call BudgetCode.committed_amount once per row, each of
+    # which opened its own DB session — an N+1 pattern fixed below by
+    # _bulk_committed_amounts).
     base = db.query(Requisition)
     if user.role == "staff":
         base = base.filter(Requisition.requester_id == user.id)
@@ -1759,20 +1890,41 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
     pending = base.filter(Requisition.current_stage.in_(["hod", "treasurer", "clerk"])).count()
     approved = base.filter(Requisition.status.in_(["approved", "accounted"])).count()
     rejected = base.filter(Requisition.status == "rejected").count()
-
-    all_codes = db.query(BudgetCode).all()
-    total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
-    utilized = sum(bc.committed_amount for bc in all_codes)
-
     recent = base.order_by(Requisition.created_at.desc()).limit(6).all()
+
+    budget_summary = _cache_get("dashboard_stats:budget_summary")
+    if budget_summary is None:
+        all_codes = db.query(BudgetCode).all()
+        committed_map = _bulk_committed_amounts(db, [bc.id for bc in all_codes])
+
+        total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
+        utilized = sum(committed_map.get(bc.id, 0.0) for bc in all_codes)
+
+        dept_totals: dict = {}
+        for bc in all_codes:
+            dept_name = bc.department.name if bc.department else "Unassigned"
+            dept_totals[dept_name] = dept_totals.get(dept_name, 0.0) + bc.allocated_amount
+        budget_by_department = sorted(
+            [{"department": name, "amount": amount} for name, amount in dept_totals.items()],
+            key=lambda d: d["amount"], reverse=True,
+        )
+
+        budget_summary = {
+            "total_budget": total_budget_sum,
+            "budget_utilized": utilized,
+            "utilization_pct": round((utilized / total_budget_sum * 100), 1) if total_budget_sum else 0,
+            "budget_by_department": budget_by_department,
+        }
+        _cache_set("dashboard_stats:budget_summary", budget_summary)
 
     return {
         "pending_approvals": pending,
         "approved_requisitions": approved,
         "rejected_requisitions": rejected,
-        "total_budget": total_budget_sum,
-        "budget_utilized": utilized,
-        "utilization_pct": round((utilized / total_budget_sum * 100), 1) if total_budget_sum else 0,
+        "total_budget": budget_summary["total_budget"],
+        "budget_utilized": budget_summary["budget_utilized"],
+        "utilization_pct": budget_summary["utilization_pct"],
+        "budget_by_department": budget_summary["budget_by_department"],
         "recent_activity": [
             {"ref_no": r.ref_no, "status": r.status, "amount": r.amount_requested,
              "department": r.department.name if r.department else None,
