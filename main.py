@@ -518,6 +518,16 @@ class UserCreate(BaseModel):
     telephone: Optional[str] = None
 
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
+
+
 class DepartmentIn(BaseModel):
     name: str
     code: str
@@ -908,6 +918,43 @@ def toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User 
     return target
 
 
+@app.patch("/api/users/{user_id}", response_model=UserOut)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = payload.dict(exclude_unset=True)
+    if "role" in data and data["role"] and data["role"] not in ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role supplied")
+    if data.get("email") and data["email"] != target.email:
+        if db.query(User).filter(User.email == data["email"]).first():
+            raise HTTPException(status_code=400, detail="A user with this email already exists")
+    password = data.pop("password", None)
+    for field, value in data.items():
+        setattr(target, field, value)
+    if password:
+        target.hashed_password = hash_password(password)
+    db.commit()
+    db.refresh(target)
+    log_action(db, admin.id, "user.update", f"Updated user {target.email}")
+    return target
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    if db.query(Requisition).filter(Requisition.requester_id == user_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a user who has requisitions on record — disable the account instead")
+    db.delete(target)
+    db.commit()
+    log_action(db, admin.id, "user.delete", f"Deleted user {target.email}")
+    return {"ok": True}
+
+
 # ---------------------------- User Signatures -------------------------------
 
 _ALLOWED_SIGNATURE_EXT = {".png", ".jpg", ".jpeg"}
@@ -971,6 +1018,44 @@ def create_department(payload: DepartmentIn, db: Session = Depends(get_db), admi
     return dep
 
 
+@app.patch("/api/departments/{dep_id}", response_model=DepartmentOut)
+def update_department(dep_id: int, payload: DepartmentIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    dep = db.query(Department).filter(Department.id == dep_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if db.query(Department).filter(Department.code == payload.code, Department.id != dep_id).first():
+        raise HTTPException(status_code=400, detail="Department code already exists")
+    if db.query(Department).filter(Department.name == payload.name, Department.id != dep_id).first():
+        raise HTTPException(status_code=400, detail="Department name already exists")
+    dep.name = payload.name
+    dep.code = payload.code
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Department name or code already exists")
+    db.refresh(dep)
+    log_action(db, admin.id, "department.update", dep.name)
+    _invalidate_budget_code_caches()
+    return dep
+
+
+@app.delete("/api/departments/{dep_id}")
+def delete_department(dep_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    dep = db.query(Department).filter(Department.id == dep_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if db.query(User).filter(User.department_id == dep_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a department that still has users assigned to it")
+    if db.query(BudgetCode).filter(BudgetCode.department_id == dep_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a department that still has budget codes assigned to it")
+    db.delete(dep)
+    db.commit()
+    log_action(db, admin.id, "department.delete", dep.name)
+    _invalidate_budget_code_caches()
+    return {"ok": True}
+
+
 # ---------------------------- Work Plans ------------------------------------
 
 @app.get("/api/workplans", response_model=List[WorkPlanOut])
@@ -987,6 +1072,34 @@ def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: U
     log_action(db, admin.id, "workplan.create", f"{wp.title} ({wp.financial_year})")
     _invalidate_budget_code_caches()
     return wp
+
+
+@app.patch("/api/workplans/{wp_id}", response_model=WorkPlanOut)
+def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    wp.financial_year = payload.financial_year
+    wp.title = payload.title
+    db.commit()
+    db.refresh(wp)
+    log_action(db, admin.id, "workplan.update", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
+    return wp
+
+
+@app.delete("/api/workplans/{wp_id}")
+def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    if db.query(BudgetCode).filter(BudgetCode.work_plan_id == wp_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a work plan that still has budget codes attached to it")
+    db.delete(wp)
+    db.commit()
+    log_action(db, admin.id, "workplan.delete", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
+    return {"ok": True}
 
 
 # ---------------------------- Budget Codes ----------------------------------
@@ -1093,6 +1206,21 @@ def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depe
     log_action(db, admin.id, "budget_code.update", f"{bc.code} - {bc.output_description}")
     _invalidate_budget_code_caches()
     return budget_code_to_out(bc)
+
+
+@app.delete("/api/budget-codes/{bc_id}")
+def delete_budget_code(bc_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
+    if not bc:
+        raise HTTPException(status_code=404, detail="Budget code not found")
+    if db.query(Requisition).filter(Requisition.budget_code_id == bc_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a budget code that has requisitions raised against it")
+    db.query(Activity).filter(Activity.budget_code_id == bc_id).delete()
+    db.delete(bc)
+    db.commit()
+    log_action(db, admin.id, "budget_code.delete", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
+    return {"ok": True}
 
 
 # ---- Excel import ----------------------------------------------------------
@@ -1591,6 +1719,59 @@ def submit_requisition(req_id: int, db: Session = Depends(get_db), user: User = 
     _submit_requisition(r, db, user)
     log_action(db, user.id, "requisition.submit", r.ref_no)
     return requisition_to_dict(r)
+
+
+@app.patch("/api/requisitions/{req_id}")
+def update_requisition(req_id: int, payload: RequisitionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    if r.requester_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only edit your own requisitions")
+    if r.status not in ("draft", "returned"):
+        raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be edited")
+
+    bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
+    if not bc:
+        raise HTTPException(status_code=400, detail="Selected budget code does not exist")
+    if not payload.payment_voucher_number or not payload.payment_voucher_number.strip():
+        raise HTTPException(status_code=400, detail="Please provide the Payment Voucher Number")
+    if not payload.line_items:
+        raise HTTPException(status_code=400, detail="Please add at least one line item")
+    total = sum((li.amount or 0) for li in payload.line_items)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="Please add at least one priced line item")
+
+    r.budget_code_id = payload.budget_code_id
+    r.activity_id = payload.activity_id
+    r.subject = payload.subject
+    r.payment_voucher_number = payload.payment_voucher_number.strip()
+    r.line_items = json.dumps([li.dict() for li in payload.line_items])
+    r.amount_requested = total
+    r.updated_at = dt.datetime.utcnow()
+    db.commit()
+    db.refresh(r)
+    log_action(db, user.id, "requisition.update", r.ref_no)
+    _invalidate_budget_code_caches()
+    return requisition_to_dict(r)
+
+
+@app.delete("/api/requisitions/{req_id}")
+def delete_requisition(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    if r.requester_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only delete your own requisitions")
+    if r.status not in ("draft", "returned"):
+        raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be deleted")
+    db.query(Document).filter(Document.requisition_id == req_id).delete()
+    db.query(ApprovalHistory).filter(ApprovalHistory.requisition_id == req_id).delete()
+    db.delete(r)
+    db.commit()
+    log_action(db, user.id, "requisition.delete", r.ref_no)
+    _invalidate_budget_code_caches()
+    return {"ok": True}
 
 
 STAGE_ROLE = {"hod": "hod", "treasurer": "treasurer", "clerk": "clerk"}
