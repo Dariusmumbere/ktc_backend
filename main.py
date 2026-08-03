@@ -1463,6 +1463,7 @@ ws = wb.active
         )
 
     rows = all_rows[header_row_idx:]  # so rows[0] is the header from here on, rest of function is unchanged
+
     if "source_of_financing_name" not in col_map.values():
         raise HTTPException(
             status_code=400,
