@@ -1445,14 +1445,10 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
             detail="The uploaded workbook appears to be empty"
         )
 
-    # Find the real header row: the first row that yields at least 2
-    # recognised column aliases (skips title/caption rows like
-    # "Description of Revenue Source by Category for the FY 2026/27",
-    # which occupy row 1 in some workbooks but aren't the header).
     header_row_idx = None
     col_map = {}
 
-    for i, row in enumerate(all_rows[:10]):  # header should be within the first few rows
+    for i, row in enumerate(all_rows[:10]):
         candidate = [_normalize_header_key(h) for h in row]
         candidate_map = {
             idx: _REVENUE_IMPORT_COLUMN_ALIASES[h]
@@ -1471,7 +1467,7 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
             detail="Could not find a header row with recognisable columns (e.g. 'Source of Financing Name') in the first 10 rows of the sheet"
         )
 
-    rows = all_rows[header_row_idx:]  # so rows[0] is the header from here on
+    rows = all_rows[header_row_idx:]
 
     if "source_of_financing_name" not in col_map.values():
         raise HTTPException(
@@ -1488,7 +1484,6 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
     skipped = 0
     errors: List[str] = []
 
-    # Keyed by (normalized pbs_fund_code, normalized source name)
     grouped: dict = {}
     order: List[tuple] = []
 
@@ -1503,8 +1498,12 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
         source_name = _text(data.get("source_of_financing_name"))
 
         if not source_name:
-            # Continuation row
-            if has_sub_row_columns and order and _text(data.get("item_description")):
+            continuation_text = (
+                _text(data.get("item_description"))
+                or _text(data.get("functional_definition"))
+            )
+
+            if order and continuation_text:
                 key = order[-1]
             else:
                 skipped += 1
@@ -1512,6 +1511,7 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
                     f"Row {row_idx}: missing Source of Financing Name — skipped"
                 )
                 continue
+
         else:
             if _normalize_dept_name(source_name) in _SUBTOTAL_MARKERS:
                 continue
@@ -1531,16 +1531,12 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 
         entry = grouped[key]
 
-        if not entry.get("functional_definition"):
-            entry["functional_definition"] = _text(
-                data.get("functional_definition")
-            )
-
         item_desc = _text(data.get("item_description"))
+        if not item_desc and not source_name:
+            item_desc = _text(data.get("functional_definition"))
+
         if item_desc:
-            amt, ok, original = parse_amount_verbose(
-                data.get("item_amount")
-            )
+            amt, ok, original = parse_amount_verbose(data.get("item_amount"))
 
             if not ok:
                 errors.append(
