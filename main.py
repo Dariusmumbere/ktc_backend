@@ -1436,10 +1436,14 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
 
-ws = wb.active
+    ws = wb.active
     all_rows = list(ws.iter_rows(values_only=True))
+
     if not all_rows:
-        raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded workbook appears to be empty"
+        )
 
     # Find the real header row: the first row that yields at least 2
     # recognised column aliases (skips title/caption rows like
@@ -1447,10 +1451,15 @@ ws = wb.active
     # which occupy row 1 in some workbooks but aren't the header).
     header_row_idx = None
     col_map = {}
+
     for i, row in enumerate(all_rows[:10]):  # header should be within the first few rows
         candidate = [_normalize_header_key(h) for h in row]
-        candidate_map = {idx: _REVENUE_IMPORT_COLUMN_ALIASES[h]
-                          for idx, h in enumerate(candidate) if h in _REVENUE_IMPORT_COLUMN_ALIASES}
+        candidate_map = {
+            idx: _REVENUE_IMPORT_COLUMN_ALIASES[h]
+            for idx, h in enumerate(candidate)
+            if h in _REVENUE_IMPORT_COLUMN_ALIASES
+        }
+
         if len(candidate_map) >= 2:
             header_row_idx = i
             col_map = candidate_map
@@ -1462,7 +1471,7 @@ ws = wb.active
             detail="Could not find a header row with recognisable columns (e.g. 'Source of Financing Name') in the first 10 rows of the sheet"
         )
 
-    rows = all_rows[header_row_idx:]  # so rows[0] is the header from here on, rest of function is unchanged
+    rows = all_rows[header_row_idx:]  # so rows[0] is the header from here on
 
     if "source_of_financing_name" not in col_map.values():
         raise HTTPException(
@@ -1479,10 +1488,8 @@ ws = wb.active
     skipped = 0
     errors: List[str] = []
 
-    # Keyed by (normalized pbs_fund_code, normalized source name) so that
-    # repeated rows for the same category (in the sub-row layout) collapse
-    # into a single RevenueSource with multiple RevenueSourceItem rows.
-    grouped: "dict" = {}
+    # Keyed by (normalized pbs_fund_code, normalized source name)
+    grouped: dict = {}
     order: List[tuple] = []
 
     for row_idx, row in enumerate(rows[1:], start=2):
@@ -1494,21 +1501,24 @@ ws = wb.active
             data[field] = row[idx] if idx < len(row) else None
 
         source_name = _text(data.get("source_of_financing_name"))
+
         if not source_name:
-            # A blank Source of Financing Name is only acceptable as a
-            # continuation row of the previous category when we're in
-            # sub-row mode and there's an item description to attach.
+            # Continuation row
             if has_sub_row_columns and order and _text(data.get("item_description")):
                 key = order[-1]
             else:
                 skipped += 1
-                errors.append(f"Row {row_idx}: missing Source of Financing Name — skipped")
+                errors.append(
+                    f"Row {row_idx}: missing Source of Financing Name — skipped"
+                )
                 continue
         else:
             if _normalize_dept_name(source_name) in _SUBTOTAL_MARKERS:
                 continue
+
             fund_code = _text(data.get("pbs_fund_code"))
             key = (fund_code or "", _normalize_dept_name(source_name))
+
             if key not in grouped:
                 grouped[key] = {
                     "pbs_fund_code": fund_code,
@@ -1520,23 +1530,41 @@ ws = wb.active
                 order.append(key)
 
         entry = grouped[key]
-        # A later row for the same category may carry the functional
-        # definition even if the first one didn't.
+
         if not entry.get("functional_definition"):
-            entry["functional_definition"] = _text(data.get("functional_definition"))
+            entry["functional_definition"] = _text(
+                data.get("functional_definition")
+            )
 
         item_desc = _text(data.get("item_description"))
         if item_desc:
-            amt, ok, original = parse_amount_verbose(data.get("item_amount"))
+            amt, ok, original = parse_amount_verbose(
+                data.get("item_amount")
+            )
+
             if not ok:
-                errors.append(f"Row {row_idx}: could not read '{original}' as a number for Approved Estimate — treated as 0")
-            entry["items"].append({"description": item_desc, "amount": amt})
+                errors.append(
+                    f"Row {row_idx}: could not read '{original}' as a number for Approved Estimate — treated as 0"
+                )
+
+            entry["items"].append(
+                {
+                    "description": item_desc,
+                    "amount": amt,
+                }
+            )
 
     for key in order:
         entry = grouped[key]
-        amount, ok, original = parse_amount_verbose(entry.get("approved_budget_amount"))
+
+        amount, ok, original = parse_amount_verbose(
+            entry.get("approved_budget_amount")
+        )
+
         if not ok:
-            errors.append(f"Could not read '{original}' as a number for Approved Budget Amount on '{entry['source_of_financing_name']}' — treated as 0")
+            errors.append(
+                f"Could not read '{original}' as a number for Approved Budget Amount on '{entry['source_of_financing_name']}' — treated as 0"
+            )
 
         r = RevenueSource(
             work_plan_id=work_plan_id,
@@ -1545,18 +1573,37 @@ ws = wb.active
             functional_definition=entry["functional_definition"],
             approved_budget_amount=amount,
         )
+
         db.add(r)
         db.flush()
+
         for it in entry["items"]:
-            db.add(RevenueSourceItem(revenue_source_id=r.id, description=it["description"], amount=it["amount"]))
+            db.add(
+                RevenueSourceItem(
+                    revenue_source_id=r.id,
+                    description=it["description"],
+                    amount=it["amount"],
+                )
+            )
+
         created += 1
 
     db.commit()
-    log_action(db, admin.id, "revenue_source.import",
-               f"Imported {created} revenue source(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)")
-    _invalidate_revenue_source_caches()
-    return RevenueSourceImportResult(created=created, skipped=skipped, errors=errors[:30])
 
+    log_action(
+        db,
+        admin.id,
+        "revenue_source.import",
+        f"Imported {created} revenue source(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)",
+    )
+
+    _invalidate_revenue_source_caches()
+
+    return RevenueSourceImportResult(
+        created=created,
+        skipped=skipped,
+        errors=errors[:30],
+    )
 
 # ---------------------------- Budget Codes ----------------------------------
 
