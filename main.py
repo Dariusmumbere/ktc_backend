@@ -1379,6 +1379,7 @@ _REVENUE_IMPORT_COLUMN_ALIASES = {
     "source of funding": "source_of_financing_name",
     "financing source": "source_of_financing_name",
     "functional definition in pbs": "functional_definition",
+    "functional definition in pbs (category & item details)": "functional_definition",
     "functional definition": "functional_definition",
     "revenue item": "item_description",
     "revenue item (functional definition)": "item_description",
@@ -1388,6 +1389,8 @@ _REVENUE_IMPORT_COLUMN_ALIASES = {
     "approved budget amount": "approved_budget_amount",
     "approved budget amount (ugx)": "approved_budget_amount",
     "approved budget": "approved_budget_amount",
+    "subtotal approved budget estimates by revenue source (ugx)": "item_amount",
+    "total approved budget estimate by revenue source category (ugx)": "approved_budget_amount",
     "amount": "approved_budget_amount",
 }
 
@@ -1433,18 +1436,33 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
 
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
+ws = wb.active
+    all_rows = list(ws.iter_rows(values_only=True))
+    if not all_rows:
         raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
 
-    header = [_normalize_header_key(h) for h in rows[0]]
+    # Find the real header row: the first row that yields at least 2
+    # recognised column aliases (skips title/caption rows like
+    # "Description of Revenue Source by Category for the FY 2026/27",
+    # which occupy row 1 in some workbooks but aren't the header).
+    header_row_idx = None
     col_map = {}
-    for idx, h in enumerate(header):
-        field = _REVENUE_IMPORT_COLUMN_ALIASES.get(h)
-        if field:
-            col_map[idx] = field
+    for i, row in enumerate(all_rows[:10]):  # header should be within the first few rows
+        candidate = [_normalize_header_key(h) for h in row]
+        candidate_map = {idx: _REVENUE_IMPORT_COLUMN_ALIASES[h]
+                          for idx, h in enumerate(candidate) if h in _REVENUE_IMPORT_COLUMN_ALIASES}
+        if len(candidate_map) >= 2:
+            header_row_idx = i
+            col_map = candidate_map
+            break
 
+    if header_row_idx is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not find a header row with recognisable columns (e.g. 'Source of Financing Name') in the first 10 rows of the sheet"
+        )
+
+    rows = all_rows[header_row_idx:]  # so rows[0] is the header from here on, rest of function is unchanged
     if "source_of_financing_name" not in col_map.values():
         raise HTTPException(
             status_code=400,
