@@ -134,6 +134,10 @@ def _invalidate_budget_code_caches():
     _cache_invalidate_prefix("dashboard_stats:")
 
 
+def _invalidate_revenue_source_caches():
+    _cache_invalidate_prefix("revenue_sources:")
+
+
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
 # --------------------------------------------------------------------------
@@ -244,6 +248,7 @@ class WorkPlan(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     budget_codes = relationship("BudgetCode", back_populates="work_plan")
+    revenue_sources = relationship("RevenueSource", back_populates="work_plan")
 
 
 class BudgetCode(Base):
@@ -310,6 +315,19 @@ class BudgetCode(Base):
     @property
     def available_balance(self):
         return self.allocated_amount - self.committed_amount
+
+
+class RevenueSource(Base):
+    __tablename__ = "revenue_sources"
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
+    pbs_fund_code = Column(String(50))
+    source_of_financing_name = Column(String(255), nullable=False)
+    functional_definition = Column(Text)
+    approved_budget_amount = Column(Float, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    work_plan = relationship("WorkPlan", back_populates="revenue_sources")
 
 
 class Activity(Base):
@@ -627,6 +645,39 @@ class BudgetCodeImportResult(BaseModel):
     created: int
     skipped: int
     departments_created: int = 0
+    errors: List[str] = []
+
+
+class RevenueSourceIn(BaseModel):
+    work_plan_id: int
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: str
+    functional_definition: Optional[str] = None
+    approved_budget_amount: Union[float, int, str] = 0
+
+
+class RevenueSourceUpdate(BaseModel):
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: Optional[str] = None
+    functional_definition: Optional[str] = None
+    approved_budget_amount: Optional[Union[float, int, str]] = None
+
+
+class RevenueSourceOut(BaseModel):
+    id: int
+    work_plan_id: int
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: str
+    functional_definition: Optional[str] = None
+    approved_budget_amount: float
+
+    class Config:
+        from_attributes = True
+
+
+class RevenueSourceImportResult(BaseModel):
+    created: int
+    skipped: int
     errors: List[str] = []
 
 
@@ -1102,6 +1153,191 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     return {"ok": True}
 
 
+# ---------------------------- Revenue Sources --------------------------------
+
+def revenue_source_to_out(r: RevenueSource) -> RevenueSourceOut:
+    return RevenueSourceOut(
+        id=r.id, work_plan_id=r.work_plan_id, pbs_fund_code=r.pbs_fund_code,
+        source_of_financing_name=r.source_of_financing_name,
+        functional_definition=r.functional_definition,
+        approved_budget_amount=parse_amount(r.approved_budget_amount),
+    )
+
+
+@app.get("/api/revenue-sources", response_model=List[RevenueSourceOut])
+def list_revenue_sources(work_plan_id: Optional[int] = None, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    cache_key = f"revenue_sources:{work_plan_id}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    q = db.query(RevenueSource)
+    if work_plan_id:
+        q = q.filter(RevenueSource.work_plan_id == work_plan_id)
+    sources = q.order_by(RevenueSource.pbs_fund_code).all()
+    result = [revenue_source_to_out(r) for r in sources]
+    _cache_set(cache_key, result)
+    return result
+
+
+@app.post("/api/revenue-sources", response_model=RevenueSourceOut)
+def create_revenue_source(payload: RevenueSourceIn, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+    r = RevenueSource(
+        work_plan_id=payload.work_plan_id,
+        pbs_fund_code=payload.pbs_fund_code,
+        source_of_financing_name=payload.source_of_financing_name,
+        functional_definition=payload.functional_definition,
+        approved_budget_amount=parse_amount(payload.approved_budget_amount),
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_source.create", r.source_of_financing_name)
+    _invalidate_revenue_source_caches()
+    return revenue_source_to_out(r)
+
+
+@app.patch("/api/revenue-sources/{rev_id}", response_model=RevenueSourceOut)
+def update_revenue_source(rev_id: int, payload: RevenueSourceUpdate, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueSource).filter(RevenueSource.id == rev_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revenue source not found")
+    data = payload.dict(exclude_unset=True)
+    if "approved_budget_amount" in data:
+        data["approved_budget_amount"] = parse_amount(data["approved_budget_amount"])
+    for field, value in data.items():
+        setattr(r, field, value)
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_source.update", r.source_of_financing_name)
+    _invalidate_revenue_source_caches()
+    return revenue_source_to_out(r)
+
+
+@app.delete("/api/revenue-sources/{rev_id}")
+def delete_revenue_source(rev_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueSource).filter(RevenueSource.id == rev_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revenue source not found")
+    db.delete(r)
+    db.commit()
+    log_action(db, admin.id, "revenue_source.delete", r.source_of_financing_name)
+    _invalidate_revenue_source_caches()
+    return {"ok": True}
+
+
+_REVENUE_IMPORT_COLUMN_ALIASES = {
+    "pbs fund code": "pbs_fund_code",
+    "fund code": "pbs_fund_code",
+    "source of financing name": "source_of_financing_name",
+    "source of financing": "source_of_financing_name",
+    "source of funding": "source_of_financing_name",
+    "financing source": "source_of_financing_name",
+    "functional definition in pbs": "functional_definition",
+    "functional definition": "functional_definition",
+    "approved budget amount": "approved_budget_amount",
+    "approved budget amount (ugx)": "approved_budget_amount",
+    "approved budget": "approved_budget_amount",
+    "amount": "approved_budget_amount",
+}
+
+
+@app.post("/api/revenue-sources/import", response_model=RevenueSourceImportResult)
+async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...),
+                                  db: Session = Depends(get_db),
+                                  admin: User = Depends(require_roles("admin"))):
+    """Bulk-create Revenue Source rows from an uploaded Excel workbook, so
+    revenue sources prepared offline can be imported directly instead of
+    being typed in one at a time via the Add Revenue Sources form."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed."
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
+
+    header = [_normalize_header_key(h) for h in rows[0]]
+    col_map = {}
+    for idx, h in enumerate(header):
+        field = _REVENUE_IMPORT_COLUMN_ALIASES.get(h)
+        if field:
+            col_map[idx] = field
+
+    if "source_of_financing_name" not in col_map.values():
+        raise HTTPException(
+            status_code=400,
+            detail="The workbook must at least include a 'Source of Financing Name' column"
+        )
+
+    def _text(v):
+        return str(v).strip() if v is not None else None
+
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+
+        data = {}
+        for idx, field in col_map.items():
+            data[field] = row[idx] if idx < len(row) else None
+
+        source_name = _text(data.get("source_of_financing_name"))
+        if not source_name:
+            skipped += 1
+            errors.append(f"Row {row_idx}: missing Source of Financing Name — skipped")
+            continue
+        if _normalize_dept_name(source_name) in _SUBTOTAL_MARKERS:
+            continue
+
+        amount, ok, original = parse_amount_verbose(data.get("approved_budget_amount"))
+        if not ok:
+            errors.append(f"Row {row_idx}: could not read '{original}' as a number for Approved Budget Amount — treated as 0")
+
+        r = RevenueSource(
+            work_plan_id=work_plan_id,
+            pbs_fund_code=_text(data.get("pbs_fund_code")),
+            source_of_financing_name=source_name,
+            functional_definition=_text(data.get("functional_definition")),
+            approved_budget_amount=amount,
+        )
+        db.add(r)
+        created += 1
+
+    db.commit()
+    log_action(db, admin.id, "revenue_source.import",
+               f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)")
+    _invalidate_revenue_source_caches()
+    return RevenueSourceImportResult(created=created, skipped=skipped, errors=errors[:30])
+
+
 # ---------------------------- Budget Codes ----------------------------------
 
 def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
@@ -1308,7 +1544,8 @@ def _normalize_header_key(h) -> str:
 # Normalises a department name for matching: case-insensitive, "&" treated
 # the same as "and", and all whitespace collapsed. This is what lets
 # "Administration & Support Services" match an existing department already
-# stored as "Administration and Support Services".
+# stored as "Administration and Support Services". Also reused (loosely)
+# by the revenue-source importer to detect subtotal/total marker rows.
 def _normalize_dept_name(name: Optional[str]) -> str:
     if not name:
         return ""
