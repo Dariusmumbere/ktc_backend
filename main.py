@@ -2603,7 +2603,58 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
             for r in recent
         ],
     }
+@app.delete("/api/revenue-sources/clear-all")
+def clear_all_revenue_sources(work_plan_id: int, db: Session = Depends(get_db),
+                              admin: User = Depends(require_roles("admin"))):
+    """Clear ALL Revenue Sources (and their sub rows) for the selected work
+    plan at once. Called by the "Clear All Revenue Sources" button on the
+    Work Plan & Budget view. NOTE: this route is registered BEFORE the
+    /api/revenue-sources/{rev_id} routes so that the literal "clear-all"
+    path segment is never swallowed by the integer {rev_id} matcher."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+    sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == work_plan_id).all()
+    deleted = 0
+    for r in sources:
+        # cascade="all, delete-orphan" on RevenueSource.items removes each
+        # source's sub rows automatically.
+        db.delete(r)
+        deleted += 1
+    db.commit()
+    log_action(db, admin.id, "revenue_source.clear_all",
+               f"Cleared {deleted} revenue source(s) from work plan #{work_plan_id} ({wp.title}, FY {wp.financial_year})")
+    _invalidate_revenue_source_caches()
+    return {"ok": True, "deleted": deleted}
 
+@app.delete("/api/budget-codes/clear-all")
+def clear_all_budget_codes(work_plan_id: int, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    """Clear ALL Annual Workplan budget estimates for the selected work plan
+    at once. Called by the "Clear All Budget Estimates" button on the Work
+    Plan & Budget view. Budget codes that already have requisitions raised
+    against them are KEPT (to preserve referential integrity) and reported
+    back to the caller as `skipped`. NOTE: this route is registered BEFORE
+    the /api/budget-codes/{bc_id} routes so that the literal "clear-all"
+    path segment is never swallowed by the integer {bc_id} matcher."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+    codes = db.query(BudgetCode).filter(BudgetCode.work_plan_id == work_plan_id).all()
+    deleted = 0
+    skipped = 0
+    for bc in codes:
+        if db.query(Requisition).filter(Requisition.budget_code_id == bc.id).count() > 0:
+            skipped += 1
+            continue
+        db.query(Activity).filter(Activity.budget_code_id == bc.id).delete()
+        db.delete(bc)
+        deleted += 1
+    db.commit()
+    log_action(db, admin.id, "budget_code.clear_all",
+               f"Cleared {deleted} budget estimate(s) from work plan #{work_plan_id} ({wp.title}, FY {wp.financial_year}); kept {skipped} with existing requisitions")
+    _invalidate_budget_code_caches()
+    return {"ok": True, "deleted": deleted, "skipped": skipped}
 
 @app.get("/api/reports/audit-view/{req_id}")
 def audit_view(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
