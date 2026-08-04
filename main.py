@@ -1214,19 +1214,6 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     _invalidate_budget_code_caches()
     return {"ok": True}
 
-
-# ---------------------------- Revenue Sources --------------------------------
-#
-# Revenue Sources now support "sub rows" (RevenueSourceItem): individual
-# revenue items (e.g. "Unconditional Grant – Wage", "Unconditional Grant –
-# Non-Wage") entered under a parent category (PBS Fund Code + Source of
-# Financing Name + Functional Definition). Whenever a revenue source has one
-# or more sub rows, its Approved Budget Amount / Category Total is derived
-# automatically as the sum of those sub rows — the `approved_budget_amount`
-# field on the source itself becomes a fallback used only when there are no
-# sub rows at all (e.g. a simple one-line revenue source with no further
-# breakdown).
-
 def revenue_source_to_out(r: RevenueSource) -> RevenueSourceOut:
     items_out = [
         RevenueSourceItemOut(id=it.id, description=it.description, amount=parse_amount(it.amount))
@@ -1392,6 +1379,9 @@ _REVENUE_IMPORT_COLUMN_ALIASES = {
     "subtotal approved budget estimates by revenue source (ugx)": "item_amount",
     "total approved budget estimate by revenue source category (ugx)": "approved_budget_amount",
     "amount": "approved_budget_amount",
+    # NEW — matches this workbook's actual column headers (no "Subtotal"/"Total" prefix)
+    "approved budget estimates by revenue source (ugx)": "item_amount",
+    "approved budget estimate by revenue source category (ugx)": "approved_budget_amount",
 }
 
 
