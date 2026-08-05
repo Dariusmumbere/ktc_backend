@@ -28,6 +28,13 @@ from jose import jwt, JWTError
 import boto3
 from botocore.exceptions import ClientError
 
+# PDF report generation (pip install reportlab)
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+
 logger = logging.getLogger("ktc_ipfms")
 logging.basicConfig(level=logging.INFO)
 
@@ -2675,6 +2682,313 @@ def mark_all_read(db: Session = Depends(get_db), user: User = Depends(get_curren
     db.query(Notification).filter(Notification.user_id == user.id, Notification.is_read == False).update({"is_read": True})
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------- Work Plan PDF Report ---------------------------
+# Static narrative text carried over from the Council's Annual Work Plan &
+# Budget document (forward, Town Clerk message, executive summary). The two
+# data tables below them (Revenue Sources, Annual Workplan Budget) are NOT
+# static — they're rendered live from the database at export time.
+
+REPORT_FORWARD_PARAS = [
+    "It is my pleasure to present the Karugutu Town Council Annual Work Plan and Budget for the Financial Year 2026/2027, which provides the Council's implementation roadmap for delivering quality public services and advancing sustainable socio-economic transformation within our municipality. This Work Plan and Budget operationalizes the Karugutu Town Council Five-Year Strategic Development Plan (2025–2030) by translating its strategic priorities into annual programmes, budget outputs, measurable performance targets, and resource allocations that respond to the aspirations and needs of our people.",
+    "The FY 2026/27 Work Plan has been prepared in accordance with the Constitution of the Republic of Uganda, the Local Governments Act, the Public Finance Management Act, the Programme-Based Budgeting Framework, the Fourth National Development Plan (NDP IV), and other relevant Government policies and guidelines. It reflects our commitment to prudent financial management, transparency, accountability, citizen participation, and results-oriented service delivery.",
+    "During the financial year, the Council will prioritize investments in road infrastructure maintenance, engineering services, physical planning, environmental management, local revenue enhancement, financial accountability, institutional capacity building, agricultural production, community empowerment, and improved governance. These interventions are intended to create an enabling environment for economic growth, improve public service delivery, promote orderly urban development, and enhance the quality of life of the residents of Karugutu Town Council.",
+    "The successful implementation of this Annual Work Plan will depend on the collective efforts of all stakeholders, including the Central Government, Ntoroko District Local Government, Development Partners, the Technical Staff, Council Members, the Private Sector, Civil Society Organizations, Community-Based Organizations, cultural and religious leaders, and the people of Karugutu Town Council. I therefore call upon every stakeholder to actively participate in the implementation, monitoring, and evaluation of the planned interventions to ensure that the intended development outcomes are achieved.",
+    "On behalf of the Council, I extend my sincere appreciation to the Government of Uganda, the Ministry of Local Government, the Ministry of Finance, Planning and Economic Development, Ntoroko District Local Government, our Development Partners, and all stakeholders whose technical and financial support has contributed to the preparation of this Annual Work Plan and Budget.",
+    "I am confident that, through prudent resource management, strong partnerships, and unwavering commitment, Karugutu Town Council will continue to make significant progress towards achieving its strategic vision of a well-planned, prosperous, resilient, and inclusive urban community.",
+]
+REPORT_FORWARD_QUOTE = "\u201cTogether, we shall build a stronger, more prosperous, and sustainable Karugutu Town Council.\u201d"
+REPORT_FORWARD_SIGNOFF = ["Hon Maate Raphael G", "THE CHAIRPERSON LC III", "Karugutu Town Council", "Ntoroko District Local Government"]
+
+REPORT_CLERK_INTRO = [
+    "It is my privilege to present the Karugutu Town Council Annual Work Plan and Budget for the 2026/2027 Financial Year. This document serves as our operational blueprint. It translates our overarching Five-Year Strategic Development Plan (2025–2030) into actionable projects, clear performance targets, and firm financial commitments.",
+    "We developed this work plan in strict compliance with Uganda\u2019s legal frameworks. These include the Constitution, the Local Governments Act, the Public Finance Management Act, and the Fourth National Development Plan (NDP IV). It anchors our operations in Programme-Based Budgeting to guarantee transparency, strict accountability, and high-quality service delivery.",
+    "For FY 2026/2027, we link every single shilling allocated directly to measurable targets, timelines, and specific oversight officers. This results-oriented setup ensures straightforward monitoring and guarantees maximum value for public funds.",
+    "Our key structural priorities for this financial year focus on:",
+]
+REPORT_CLERK_BULLETS = [
+    "Infrastructure: Expanding road networks and engineering projects.",
+    "Urban Growth: Enhancing physical planning and orderly development.",
+    "Finance: Boosting local revenue and enforcing strict financial controls.",
+    "Community: Improving public health sanitation and reinforcing local governance.",
+    "Economy: Driving agricultural production and local economic initiatives.",
+]
+REPORT_CLERK_OUTRO = [
+    "Achieving these milestones demands deep collaboration. We rely on teamwork across all political leaders, technical staff, Ntoroko District Local Government, ministries, and civil society. As Accounting Officer, I will strictly enforce compliance with all national laws, financial regulations, and procurement standards.",
+    "I extend my gratitude to the Mayor, the Executive Committee, our Technical Planning Committee, and our development partners. Your valuable input made this comprehensive plan possible.",
+    "As implementation begins, I urge all council staff and stakeholders to champion professionalism and integrity. Let us work together to build a prosperous, resilient, and well-governed Karugutu Town Council.",
+]
+REPORT_CLERK_SIGNOFF = ["TOWN CLERK", "Karugutu Town Council", "Ntoroko District Local Government"]
+
+# Executive summary: list of ("h3"|"h4"|"p"|"bullets", content) tuples, rendered in order.
+REPORT_EXEC_SUMMARY = [
+    ("h3", "Karugutu Town Council Revenue Analysis for FY 2026/27"),
+    ("p", "The Council\u2019s approved revenue framework for FY 2026/27 amounts to UGX 327,113,640, reflecting a balanced financing strategy that combines Central Government Transfers, Locally Raised Revenue (LRR), and limited development partner support. Central Government Transfers constitute the largest share of the resource envelope at UGX 175,991,640 (53.8%), primarily comprising Urban Unconditional Grant (Non-Wage), Urban Discretionary Development Equalization Grant (DDEG), and the Uganda Road Fund, thereby providing the financial foundation for recurrent service delivery and infrastructure maintenance."),
+    ("p", "Locally Raised Revenue is projected at UGX 151,120,000 (46.2%), demonstrating the Council's commitment to strengthening fiscal autonomy through enhanced revenue mobilization. The principal local revenue streams include Market Revenue (UGX 80.0 million), Council Property and Asset Revenues (UGX 19.4 million), Business Licensing and Trade Regulation (UGX 12.1 million), and Physical Planning and Development Control (UGX 12.47 million). Additional revenues are expected from property rates, public health services, transport and parking fees, environmental charges, advertising, enforcement penalties, and other administrative fees, thereby diversifying the local revenue base and reducing dependence on intergovernmental transfers."),
+    ("p", "Overall, the Council\u2019s FY 2026/27 revenue structure reflects a strategic emphasis on improving local revenue performance while leveraging Government transfers to finance priority programmes, enhance service delivery, strengthen urban governance, and support the sustainable socio-economic development of Karugutu Town Council."),
+    ("h3", "Annual Work Plan and Budget Performance Framework Analysis for FY 2026/27"),
+    ("p", "On the other hand, the Council\u2019s Annual Work Plan and Budget for FY 2026/27 operationalizes the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030) by translating its strategic objectives, priority programmes, and investment interventions into measurable annual outputs, activities, performance targets, and budget allocations. The Work Plan aligns with the Programme-Based Budgeting (PBB) Framework, the Fourth National Development Plan (NDP IV), the Sustainable Development Goals (SDGs), and other relevant national policy and legal frameworks."),
+    ("p", "The FY 2026/27 Work Plan serves as the first annual implementation instrument under the Strategic Development Plan, focusing on strengthening institutional governance, expanding infrastructure development, improving urban planning and environmental management, enhancing local revenue mobilisation, promoting local economic development, and improving access to quality public services."),
+    ("h4", "1. Budget Allocation and Strategic Investment Priorities"),
+    ("p", "The Council has strategically allocated approximately UGX 327.1 million across eight functional departments to finance the 2026/27 Annual Work Plan and a few priority interventions identified in the Five-Year Strategic Development Plan (2025\u20132030)."),
+    ("p", "The 2026/27 Annual Work Plan and Budget composition demonstrates a strategic emphasis on infrastructure development as a catalyst for economic transformation while simultaneously investing in governance, institutional strengthening, financial accountability, social development, and environmental sustainability."),
+    ("h4", "2. Financing Strategy and Budget Implementation"),
+    ("p", "Implementation of the Annual Work Plan will be financed through a combination of Locally Raised Revenue, the Urban Unconditional Grant (Non-Wage), the Uganda Road Fund (URF), and the Urban Discretionary Development Equalization Grant (DDEG)."),
+    ("p", "Routine administrative operations, planning, financial management, community development, governance, monitoring, and regulatory functions are primarily financed through locally generated revenue and unconditional government transfers. Capital-intensive investments are financed through conditional development grants."),
+    ("p", "Quarterly budget phasing has been adopted to promote efficient cash flow management, timely implementation of activities, fiscal discipline, and continuous service delivery throughout the financial year."),
+    ("h4", "3. Results-Based Performance Management Framework"),
+    ("p", "The FY 2026/27 Annual Work Plan adopts a Results-Based Management (RBM) approach in which every budget output is linked to clearly defined performance indicators, baseline values, annual targets, quarterly milestones, funding sources, and responsible officers."),
+    ("p", "Priority performance interventions include:"),
+    ("bullets", [
+        "Improving road infrastructure and engineering services to enhance connectivity and economic productivity.",
+        "Strengthening local revenue mobilization and financial compliance to improve fiscal sustainability.",
+        "Promoting orderly urban growth through spatial planning, GIS mapping, and effective development control.",
+        "Enhancing democratic governance through Council meetings, Standing Committees, Ward Development Committees, public barazas, and citizen engagement.",
+        "Supporting agricultural production, veterinary services, food safety, and enterprise development to stimulate household incomes.",
+        "Expanding community empowerment programmes focusing on gender equality, youth employment, disability inclusion, child protection, and vulnerable groups.",
+        "Strengthening internal controls, financial accountability, procurement compliance, and value-for-money assurance through independent internal audit functions.",
+    ]),
+    ("h4", "4. Monitoring, Evaluation and Accountability"),
+    ("p", "Implementation of the Annual Work Plan will be monitored through quarterly performance reviews, Technical Planning Committee meetings, field supervision, internal audits, Council oversight, statutory reporting, and annual performance assessments."),
+    ("p", "The integration of digital planning tools, electronic records management, GIS-based planning systems, and performance reporting further reinforces the Council's commitment to transparency, innovation, and effective public sector management."),
+    ("h4", "5. Strategic Outlook"),
+    ("p", "The FY 2026/27 Annual Work Plan represents the practical implementation roadmap for the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030), providing a clear pathway for achieving the Council's long-term development aspirations while ensuring accountability, efficiency, and value for public resources."),
+    ("h3", "Annual Budget Framework for FY 2026/27"),
+    ("p", "The Annual Budget Framework for FY 2026/27 provides the strategic financial planning and resource allocation mechanism through which Karugutu Town Council will implement its development priorities and statutory mandates during the financial year 1 July 2026 to 30 June 2027."),
+    ("p", "The budget framework is financed through a combination of locally generated revenue, central government transfers, external financing where applicable, and other lawful sources of revenue, allocated across programmes, departments, and budget outputs."),
+    ("p", "The framework adopts a results-based and programme-oriented approach, ensuring that financial resources are directly linked to measurable outputs, outcomes, and performance indicators, guided by principles of fiscal discipline, value for money, equity, transparency, and accountability."),
+    ("p", "To enhance accountability and effective budget execution, the Council will undertake participatory planning, stakeholder consultations, budget conferences, technical planning committee reviews, council approvals, and regular monitoring and evaluation."),
+    ("h3", "Annual Workplan and Budget Output Performance Targets for FY 2026/27"),
+    ("p", "The Karugutu Town Council Annual Workplan and Budget Output Performance Targets document serves as the formal ex-ante planning instrument, translating national strategic objectives into localized service delivery milestones, formulated under the Programme Budgeting System (PBS) and the Programme Implementation Action Plans (PIAP) framework."),
+    ("p", "Structured hierarchically by Vote, Programme, Sub-Sub Programme, and distinct Budget Outputs, this workplan maps out every operational shilling against verifiable targets."),
+    ("p", "Key Features of the Annual Workplan Framework:"),
+    ("bullets", [
+        "Logical Performance Tracking: Every expenditure line item links directly to a designated baseline value, a clear quarterly cash distribution projection, and a specified PIAP Output Indicator.",
+        "Decentralized Service Monitoring: Operational target structures are embedded directly into daily service points.",
+        "Verifiable Statutory Accountability: The planned targets establish a strict compliance baseline for ex-post audits, used during Annual Local Government Performance Assessment (LGPA) cycles.",
+    ]),
+    ("p", "Ultimately, the detailed document hereunder stands as Karugutu Town Council's binding operational commitment to transparency, evidence-based public financial management, and equitable development."),
+]
+
+# Paragraph/table styles used only by the PDF report.
+_pdf_styles = getSampleStyleSheet()
+_pdf_body = ParagraphStyle("RptBody", parent=_pdf_styles["Normal"], fontSize=9.3, leading=13.5, alignment=TA_JUSTIFY, spaceAfter=7)
+_pdf_bullet = ParagraphStyle("RptBullet", parent=_pdf_body, leftIndent=14, spaceAfter=4)
+_pdf_h1 = ParagraphStyle("RptH1", parent=_pdf_styles["Heading1"], fontSize=14, textColor=colors.HexColor("#146B5F"), spaceBefore=4, spaceAfter=10)
+_pdf_h2 = ParagraphStyle("RptH2", parent=_pdf_styles["Heading2"], fontSize=12.5, textColor=colors.HexColor("#0A1F2B"), spaceBefore=6, spaceAfter=8)
+_pdf_h3 = ParagraphStyle("RptH3", parent=_pdf_styles["Heading3"], fontSize=11, textColor=colors.HexColor("#146B5F"), spaceBefore=10, spaceAfter=5)
+_pdf_h4 = ParagraphStyle("RptH4", parent=_pdf_styles["Heading4"], fontSize=10, textColor=colors.HexColor("#0A1F2B"), spaceBefore=6, spaceAfter=3)
+_pdf_signoff = ParagraphStyle("RptSignoff", parent=_pdf_body, alignment=TA_CENTER, spaceAfter=2)
+_pdf_cover_title = ParagraphStyle("RptCoverTitle", parent=_pdf_styles["Title"], fontSize=22, alignment=TA_CENTER, spaceAfter=6)
+_pdf_cover_sub = ParagraphStyle("RptCoverSub", parent=_pdf_styles["Normal"], fontSize=15, alignment=TA_CENTER, textColor=colors.HexColor("#146B5F"), spaceAfter=4)
+_pdf_cover_line = ParagraphStyle("RptCoverLine", parent=_pdf_styles["Normal"], fontSize=10.5, alignment=TA_CENTER, spaceAfter=3)
+_pdf_cell = ParagraphStyle("RptCell", parent=_pdf_styles["Normal"], fontSize=6.6, leading=8.2)
+_pdf_cell_b = ParagraphStyle("RptCellB", parent=_pdf_cell, fontName="Helvetica-Bold")
+
+
+def _pdf_money(n) -> str:
+    """Format a number the same way the frontend's money() helper does."""
+    return f"{parse_amount(n):,.0f}"
+
+
+def _pdf_narrative_flowables(paras, quote=None, signoff=None, bullets=None):
+    """Build a forward/message page: intro paragraphs, optional bullets, optional quote + signature block."""
+    flow = [Paragraph(t, _pdf_body) for t in paras]
+    if bullets:
+        flow += [Paragraph("\u2022 " + b, _pdf_bullet) for b in bullets]
+    if quote:
+        flow.append(Spacer(1, 6))
+        flow.append(Paragraph(f"<i>{quote}</i>", ParagraphStyle("Q", parent=_pdf_body, alignment=TA_CENTER)))
+    if signoff:
+        flow.append(Spacer(1, 24))
+        for i, line in enumerate(signoff):
+            style = _pdf_signoff if i > 0 else ParagraphStyle("QSig", parent=_pdf_signoff, fontName="Helvetica-Bold")
+            flow.append(Paragraph(line, style))
+    return flow
+
+
+def _pdf_exec_summary_flowables():
+    flow = []
+    for kind, content in REPORT_EXEC_SUMMARY:
+        if kind == "h3":
+            flow.append(Paragraph(content, _pdf_h3))
+        elif kind == "h4":
+            flow.append(Paragraph(content, _pdf_h4))
+        elif kind == "p":
+            flow.append(Paragraph(content, _pdf_body))
+        elif kind == "bullets":
+            flow += [Paragraph("\u2022 " + b, _pdf_bullet) for b in content]
+    return flow
+
+
+def _pdf_dept_summary_table(codes, committed_map):
+    """Mirrors the frontend's renderDeptSummaryTable() grouping — one row per department."""
+    grouped = {}
+    for c in codes:
+        name = c.department.name if c.department else "Unassigned"
+        row = grouped.setdefault(name, {"code": c.department.code if c.department else "\u2014", "q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0})
+        q1, q2, q3, q4 = parse_amount(c.q1_amount), parse_amount(c.q2_amount), parse_amount(c.q3_amount), parse_amount(c.q4_amount)
+        total = q1 + q2 + q3 + q4
+        row["q1"] += q1; row["q2"] += q2; row["q3"] += q3; row["q4"] += q4
+        row["total"] += total
+        row["uncommitted"] += total - committed_map.get(c.id, 0.0)
+    rows = sorted(grouped.items(), key=lambda kv: -kv[1]["total"])
+
+    header = ["Dept. Code", "Department", "Q1 (UGX)", "Q2 (UGX)", "Q3 (UGX)", "Q4 (UGX)", "Total Budget (UGX)", "Uncommitted Balance (UGX)"]
+    data = [header]
+    grand = {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0}
+    for name, v in rows:
+        data.append([v["code"], name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])])
+        for k in grand:
+            grand[k] += v[k]
+    data.append(["", "Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])])
+
+    t = Table(data, colWidths=[55, 150, 65, 65, 65, 65, 80, 90], repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
+    return t
+
+
+def _pdf_table_style(header_rows=1, footer_rows=0):
+    style = [
+        ("BACKGROUND", (0, 0), (-1, header_rows - 1), colors.HexColor("#146B5F")),
+        ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), colors.white),
+        ("FONTNAME", (0, 0), (-1, header_rows - 1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#C7D2D0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, header_rows), (-1, -(footer_rows + 1)), [colors.white, colors.HexColor("#EAF6F1")]),
+    ]
+    if footer_rows:
+        style.append(("BACKGROUND", (0, -footer_rows), (-1, -1), colors.HexColor("#EAF0EF")))
+        style.append(("FONTNAME", (0, -footer_rows), (-1, -1), "Helvetica-Bold"))
+    return TableStyle(style)
+
+
+def _pdf_revenue_summary_table(sources):
+    """Mirrors the frontend's Revenue Sources Summary — the 3 fixed PBS categories."""
+    outs = [revenue_source_to_out(r) for r in sources]
+    totals = {c["key"]: 0.0 for c in REVENUE_SUMMARY_CATEGORIES}
+    for r, out in zip(sources, outs):
+        key = categorize_revenue_source(r)
+        if key:
+            totals[key] += out.approved_budget_amount
+
+    header = ["PBS Fund Code", "Source of Financing Name", "Functional Definition", "Approved Budget (UGX)"]
+    data = [header]
+    grand_total = 0.0
+    for cat in REVENUE_SUMMARY_CATEGORIES:
+        amt = totals[cat["key"]]
+        grand_total += amt
+        data.append([cat["pbs_fund_code"], cat["source_of_financing_name"], cat["functional_definition"], _pdf_money(amt)])
+    data.append(["", "", "Total Revenue", _pdf_money(grand_total)])
+
+    t = Table(data, colWidths=[65, 150, 220, 90], repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
+    return t
+
+
+def _pdf_revenue_detail_table(sources):
+    """The full 'Revenue Source by Category' table — one category head row per
+    revenue source plus its sub rows (revenue items), matching the in-app table."""
+    header = ["PBS Fund Code", "Revenue Source", "Functional Definition", "Item", "Estimate (UGX)", "Category Total (UGX)"]
+    data = [header]
+    span_cmds = []
+    for r in sources:
+        out = revenue_source_to_out(r)
+        items = out.items or []
+        row_idx = len(data)
+        if items:
+            for i, it in enumerate(items):
+                data.append([
+                    r.pbs_fund_code or "" if i == 0 else "",
+                    r.source_of_financing_name if i == 0 else "",
+                    r.functional_definition or "" if i == 0 else "",
+                    it.description, _pdf_money(it.amount),
+                    _pdf_money(out.category_total) if i == 0 else "",
+                ])
+            span_cmds.append(("SPAN", (0, row_idx), (0, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (1, row_idx), (1, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (2, row_idx), (2, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (5, row_idx), (5, row_idx + len(items) - 1)))
+        else:
+            data.append([r.pbs_fund_code or "", r.source_of_financing_name, r.functional_definition or "", "\u2014", "", _pdf_money(out.category_total)])
+
+    t = Table(data, colWidths=[55, 110, 140, 140, 65, 70], repeatRows=1)
+    style = _pdf_table_style(header_rows=1)
+    for cmd in span_cmds:
+        style.add(*cmd)
+    t.setStyle(style)
+    return t
+
+
+def _pdf_workplan_table(codes, committed_map):
+    """The full 'Annual Workplan for the FY' budget-code table — every column
+    shown in the in-app table, one row per budget code."""
+    header = ["Dept", "Service Area", "Programme", "Sub Programme", "Code", "Output Description", "PIAP Description",
+               "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source", "Responsible Party"]
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+    for c in codes:
+        row = [
+            c.department.name if c.department else "\u2014", c.service_area or "", c.programme or "", c.sub_programme or "",
+            c.code, c.output_description or "", c.piap_output_description or "", c.piap_output_indicator or "",
+            c.unit_of_measure or "", _pdf_money(c.baseline_value), _pdf_money(c.planned_target), c.actual_output or "",
+            _pdf_money(c.q1_amount), _pdf_money(c.q2_amount), _pdf_money(c.q3_amount), _pdf_money(c.q4_amount),
+            _pdf_money(c.allocated_amount), c.funding_source or "", c.responsible_party or "",
+        ]
+        data.append([Paragraph(str(v), _pdf_cell) for v in row])
+
+    col_widths = [55, 55, 55, 55, 40, 90, 80, 80, 35, 35, 35, 40, 40, 40, 40, 40, 50, 55, 65]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1))
+    return t
+
+
+def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, sources: list) -> io.BytesIO:
+    """Assembles the full Annual Work Plan & Budget PDF: static narrative
+    sections plus the live Revenue Sources and Annual Workplan Budget tables."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=28, bottomMargin=28, leftMargin=28, rightMargin=28)
+
+    story = [
+        Spacer(1, 100),
+        Paragraph("Karugutu Town Council", _pdf_cover_line),
+        Paragraph("Ntoroko District Local Government", _pdf_cover_line),
+        Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line),
+        Spacer(1, 40),
+        Paragraph("ANNUAL WORK PLAN AND BUDGET", _pdf_cover_title),
+        Paragraph(f"FY {wp.financial_year}", _pdf_cover_sub),
+        Spacer(1, 40),
+        Paragraph("Prepared by: Karugutu Town Council Technical Planning Committee", _pdf_cover_line),
+        Paragraph(f"Generated on {dt.datetime.utcnow().strftime('%d %B %Y')}", _pdf_cover_line),
+        PageBreak(),
+        Paragraph("FORWARD BY CHAIRPERSON LC III KARUGUTU TOWN COUNCIL", _pdf_h1),
+    ]
+    story += _pdf_narrative_flowables(REPORT_FORWARD_PARAS, quote=REPORT_FORWARD_QUOTE, signoff=REPORT_FORWARD_SIGNOFF)
+    story.append(PageBreak())
+    story.append(Paragraph("MESSAGE FROM THE TOWN CLERK, KARUGUTU TOWN COUNCIL", _pdf_h1))
+    story += _pdf_narrative_flowables(REPORT_CLERK_INTRO, bullets=REPORT_CLERK_BULLETS)
+    story += _pdf_narrative_flowables(REPORT_CLERK_OUTRO, signoff=REPORT_CLERK_SIGNOFF)
+    story.append(PageBreak())
+    story.append(Paragraph("EXECUTIVE SUMMARY", _pdf_h1))
+    story += _pdf_exec_summary_flowables()
+    story.append(PageBreak())
+
+    story.append(Paragraph("Department Budget Summary", _pdf_h2))
+    story.append(_pdf_dept_summary_table(codes, committed_map))
+    story.append(Spacer(1, 16))
+    story.append(Paragraph("Revenue Sources Summary", _pdf_h2))
+    story.append(_pdf_revenue_summary_table(sources))
+    story.append(PageBreak())
+    story.append(Paragraph(f"Revenue Source by Category for the FY {wp.financial_year}", _pdf_h2))
+    story.append(_pdf_revenue_detail_table(sources))
+    story.append(PageBreak())
+    story.append(Paragraph(f"Annual Workplan for the FY {wp.financial_year}", _pdf_h2))
+    story.append(_pdf_workplan_table(codes, committed_map))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
 
 
 # ---------------------------- Dashboard & Reports ----------------------------
