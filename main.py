@@ -2865,6 +2865,51 @@ def _pdf_table_style(header_rows=1, footer_rows=0):
     return TableStyle(style)
 
 
+# ---------------------------------------------------------------------------
+# Revenue Sources Summary — the 3 fixed PBS categories.
+# Mirrors REVENUE_SUMMARY_CATEGORIES / categorizeRevenueSource() in the
+# frontend (index.html) so the PDF report's Revenue Sources Summary table
+# matches the in-app table exactly.
+# ---------------------------------------------------------------------------
+REVENUE_SUMMARY_CATEGORIES = [
+    {
+        "key": "gou",
+        "pbs_fund_code": "001",
+        "source_of_financing_name": "Central Government Transfers (GoU)",
+        "functional_definition": "Regular structural wage, non-wage recurrent, and capital grants.",
+    },
+    {
+        "key": "lr",
+        "pbs_fund_code": "002",
+        "source_of_financing_name": "Locally Raised Revenues (LR)",
+        "functional_definition": "Internally collected fees, levies, licenses, and operational fines.",
+    },
+    {
+        "key": "mdp",
+        "pbs_fund_code": "400",
+        "source_of_financing_name": "Multi-lateral Development Partners",
+        "functional_definition": "International institutional donor funding (e.g., World Bank, UNICEF).",
+    },
+]
+
+
+def categorize_revenue_source(r: "RevenueSource") -> Optional[str]:
+    """Python port of the frontend's categorizeRevenueSource(): matches a
+    revenue source to one of the 3 fixed PBS categories by fund code or
+    keywords in the source name, or returns None if it fits none of them
+    (such entries are excluded from the summary totals, same as the UI)."""
+    code = (r.pbs_fund_code or "").strip()
+    name = (r.source_of_financing_name or "").lower()
+
+    if code == "001" or "central government" in name or "gou" in name or "transfers" in name:
+        return "gou"
+    if code == "002" or "locally raised" in name or "local revenue" in name or re.search(r"\blr\b", name):
+        return "lr"
+    if code == "400" or "multi-lateral" in name or "multilateral" in name or "development partner" in name or "donor" in name:
+        return "mdp"
+    return None
+
+
 def _pdf_revenue_summary_table(sources):
     """Mirrors the frontend's Revenue Sources Summary — the 3 fixed PBS categories."""
     outs = [revenue_source_to_out(r) for r in sources]
