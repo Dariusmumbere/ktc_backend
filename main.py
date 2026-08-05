@@ -2991,6 +2991,24 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     return buf
 
 
+@app.get("/api/work-plans/{wp_id}/report-pdf")
+def download_workplan_report_pdf(wp_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Streams the full Annual Work Plan & Budget PDF (narrative + Revenue
+    Sources + Annual Workplan Budget tables) for one work plan."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    codes = db.query(BudgetCode).filter(BudgetCode.work_plan_id == wp_id).order_by(BudgetCode.id.asc()).all()
+    sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == wp_id).order_by(RevenueSource.id.asc()).all()
+    committed_map = _bulk_committed_amounts(db, [c.id for c in codes])
+    buf = build_workplan_report_pdf(wp, codes, committed_map, sources)
+    fname = f"Annual_Work_Plan_FY_{wp.financial_year.replace('/', '-')}.pdf"
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ---------------------------- Dashboard & Reports ----------------------------
 
 @app.get("/api/dashboard/stats")
