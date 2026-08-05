@@ -1182,7 +1182,10 @@ def delete_department(dep_id: int, db: Session = Depends(get_db), admin: User = 
 
 @app.get("/api/workplans", response_model=List[WorkPlanOut])
 def list_workplans(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(WorkPlan).order_by(WorkPlan.financial_year.desc()).all()
+    # Ordered oldest -> newest (by creation order) so the older annual work
+    # plan(s) appear at the top of the dropdown and the most recently added
+    # work plan appears at the bottom.
+    return db.query(WorkPlan).order_by(WorkPlan.id.asc()).all()
 
 
 @app.post("/api/workplans", response_model=WorkPlanOut)
@@ -1264,7 +1267,10 @@ def list_revenue_sources(work_plan_id: Optional[int] = None, db: Session = Depen
     q = db.query(RevenueSource)
     if work_plan_id:
         q = q.filter(RevenueSource.work_plan_id == work_plan_id)
-    sources = q.order_by(RevenueSource.pbs_fund_code).all()
+    # Ordered by id (insertion order) rather than PBS fund code, so rows
+    # imported from Excel are displayed in the exact same order they
+    # appeared in the workbook, instead of being re-sorted by fund code.
+    sources = q.order_by(RevenueSource.id.asc()).all()
     result = [revenue_source_to_out(r) for r in sources]
     _cache_set(cache_key, result)
     return result
@@ -1525,13 +1531,33 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
             )
 
             if order and continuation_text:
+                # Genuine continuation row of the group above it (merged
+                # "Source of Financing Name" cell in the source sheet).
                 key = order[-1]
             else:
-                skipped += 1
-                errors.append(
-                    f"Row {row_idx}: missing Source of Financing Name — skipped"
+                # FIX: no longer skipped. A row with data but no source
+                # name and nothing to tie it to the previous group is
+                # still imported — as its own standalone revenue source —
+                # so every row in the workbook ends up in the system,
+                # instead of quietly disappearing from the import.
+                fund_code = _text(data.get("pbs_fund_code"))
+                key = (
+                    fund_code or "",
+                    f"__row{row_idx}__",
                 )
-                continue
+                grouped[key] = {
+                    "pbs_fund_code": fund_code,
+                    "source_of_financing_name": continuation_text or "Unspecified",
+                    "functional_definition": _text(data.get("functional_definition")),
+                    "approved_budget_amount": data.get("approved_budget_amount"),
+                    "items": [],
+                }
+                order.append(key)
+                errors.append(
+                    f"Row {row_idx}: Source of Financing Name was blank — imported as 'Unspecified'"
+                    if not continuation_text else
+                    f"Row {row_idx}: Source of Financing Name was blank — imported as its own row"
+                )
 
         else:
             if _normalize_dept_name(source_name) in _SUBTOTAL_MARKERS:
@@ -1683,7 +1709,10 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
     if search:
         like = f"%{search}%"
         q = q.filter(BudgetCode.output_description.ilike(like) | BudgetCode.code.ilike(like))
-    codes = q.order_by(BudgetCode.code).all()
+    # Ordered by id (insertion order) rather than code, so rows imported
+    # from Excel are displayed in the exact same order they appeared in the
+    # workbook, instead of being re-sorted alphabetically by code.
+    codes = q.order_by(BudgetCode.id.asc()).all()
 
     committed_map = _bulk_committed_amounts(db, [bc.id for bc in codes])
     result = [budget_code_to_out(bc, committed_map.get(bc.id, 0.0)) for bc in codes]
@@ -1977,9 +2006,23 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     def _text(v):
         return str(v).strip() if v is not None else None
 
+    # FIX (4): every non-blank row in the workbook is now imported — rows
+    # are no longer skipped just because the Department, Budget Output
+    # Code, or Budget Output Description cell is empty. Excel workbooks
+    # routinely leave those cells blank on continuation rows (merged
+    # cells that only carry a value on the first row of a group), so
+    # requiring them on every single row silently dropped legitimate data.
+    # Department (and, as a light touch, the other grouping columns) now
+    # simply carries forward from the last row that had a value, matching
+    # how the source workbook visually groups rows under one heading.
+    last_dept_name_raw: Optional[str] = None
+    last_service_area: Optional[str] = None
+    last_programme: Optional[str] = None
+    last_sub_programme: Optional[str] = None
+
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None or all(c is None or str(c).strip() == "" for c in row):
-            continue  # blank row
+            continue  # truly blank row — nothing in it to import
 
         data = {}
         for idx, field in col_map.items():
@@ -2002,17 +2045,31 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
         if _normalize_dept_name(dept_name_raw) in _SUBTOTAL_MARKERS:
             continue
 
+        row_warnings: List[str] = []
+
         code = _text(data.get("code"))
         output_description = _text(data.get("output_description"))
-        if not code or not output_description:
-            skipped += 1
-            errors.append(f"Row {row_idx}: missing Budget Output Code or Description — skipped")
-            continue
+        if not code:
+            row_warnings.append(f"Row {row_idx}: Budget Output Code was blank — imported with a blank code")
+        if not output_description:
+            row_warnings.append(f"Row {row_idx}: Budget Output Description was blank — imported with a blank description")
+
+        service_area = _text(data.get("service_area")) or last_service_area
+        programme = _text(data.get("programme")) or last_programme
+        sub_programme = _text(data.get("sub_programme")) or last_sub_programme
+        last_service_area = service_area or last_service_area
+        last_programme = programme or last_programme
+        last_sub_programme = sub_programme or last_sub_programme
 
         if not dept_name_raw:
-            skipped += 1
-            errors.append(f"Row {row_idx}: no department specified — skipped")
-            continue
+            # Continuation row under the same department heading as the
+            # last row that specified one (a merged-cell group in the
+            # source sheet). Only if no department has ever been seen yet
+            # do we fall back to a placeholder, so the row still imports.
+            dept_name_raw = last_dept_name_raw or "Unspecified"
+            if last_dept_name_raw is None:
+                row_warnings.append(f"Row {row_idx}: no department specified anywhere above this row — filed under 'Unspecified'")
+        last_dept_name_raw = dept_name_raw
 
         normalized_dept = _normalize_dept_name(dept_name_raw)
         dept = departments_by_normalized_name.get(normalized_dept)
@@ -2034,24 +2091,41 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
                 # concurrently (or a code collision) — re-resolve by name.
                 dept = db.query(Department).filter(Department.name == dept_name_raw.strip()).first()
                 if not dept:
-                    skipped += 1
-                    errors.append(f"Row {row_idx}: could not create or match department '{dept_name_raw}' — skipped")
-                    continue
-            existing_dept_codes.add(dept.code)
-            departments_by_normalized_name[normalized_dept] = dept
-            departments_created += 1
-            errors.append(f"Row {row_idx}: department '{dept_name_raw}' was not found and has been created automatically")
+                    # Even if the department genuinely could not be
+                    # resolved or created, the row itself is still
+                    # imported rather than dropped — just flagged.
+                    dept = None
+                    row_warnings.append(f"Row {row_idx}: could not create or match department '{dept_name_raw}'")
+            if dept:
+                existing_dept_codes.add(dept.code)
+                departments_by_normalized_name[normalized_dept] = dept
+                departments_created += 1
+                row_warnings.append(f"Row {row_idx}: department '{dept_name_raw}' was not found and has been created automatically")
 
-        row_warnings: List[str] = []
+        if not dept:
+            # Last-resort fallback so the row is never dropped: file it
+            # under a generic "Unspecified" department rather than losing
+            # the row entirely.
+            normalized_unspecified = _normalize_dept_name("Unspecified")
+            dept = departments_by_normalized_name.get(normalized_unspecified)
+            if not dept:
+                new_code = _generate_department_code("Unspecified", existing_dept_codes)
+                dept = Department(name="Unspecified", code=new_code)
+                db.add(dept)
+                db.commit()
+                db.refresh(dept)
+                existing_dept_codes.add(dept.code)
+                departments_by_normalized_name[normalized_unspecified] = dept
+                departments_created += 1
 
         bc = BudgetCode(
             work_plan_id=work_plan_id,
             department_id=dept.id,
-            service_area=_text(data.get("service_area")),
-            code=code,
-            output_description=output_description,
-            programme=_text(data.get("programme")),
-            sub_programme=_text(data.get("sub_programme")),
+            service_area=service_area,
+            code=code or "",
+            output_description=output_description or "",
+            programme=programme,
+            sub_programme=sub_programme,
             piap_output_description=_text(data.get("piap_output_description")),
             piap_output_indicator=_text(data.get("piap_output_indicator")),
             unit_of_measure=_text(data.get("unit_of_measure")),
