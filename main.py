@@ -32,8 +32,8 @@ from botocore.exceptions import ClientError
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
 
 logger = logging.getLogger("ktc_ipfms")
 logging.basicConfig(level=logging.INFO)
@@ -2783,8 +2783,37 @@ _pdf_signoff = ParagraphStyle("RptSignoff", parent=_pdf_body, alignment=TA_CENTE
 _pdf_cover_title = ParagraphStyle("RptCoverTitle", parent=_pdf_styles["Title"], fontSize=22, alignment=TA_CENTER, spaceAfter=6)
 _pdf_cover_sub = ParagraphStyle("RptCoverSub", parent=_pdf_styles["Normal"], fontSize=15, alignment=TA_CENTER, textColor=colors.HexColor("#146B5F"), spaceAfter=4)
 _pdf_cover_line = ParagraphStyle("RptCoverLine", parent=_pdf_styles["Normal"], fontSize=10.5, alignment=TA_CENTER, spaceAfter=3)
-_pdf_cell = ParagraphStyle("RptCell", parent=_pdf_styles["Normal"], fontSize=6.6, leading=8.2)
+_pdf_cell = ParagraphStyle("RptCell", parent=_pdf_styles["Normal"], fontSize=6.6, leading=8.2, wordWrap="CJK")
 _pdf_cell_b = ParagraphStyle("RptCellB", parent=_pdf_cell, fontName="Helvetica-Bold")
+_pdf_cell_r = ParagraphStyle("RptCellR", parent=_pdf_cell, alignment=TA_RIGHT)
+_pdf_cell_rb = ParagraphStyle("RptCellRB", parent=_pdf_cell_b, alignment=TA_RIGHT)
+
+# The letterhead banner (Uganda coat of arms + "Karugutu Town Council" wordmark
+# + Ntoroko District Local Government seal) used on the report's cover page,
+# matching the letterhead already used at the top of the Word (.docx) version
+# of this report. Expected to live at assets/ktc_letterhead.png alongside
+# this file; the PDF still builds fine (just without the banner) if it's
+# ever missing, so a missing asset never breaks report generation.
+_PDF_LETTERHEAD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ktc_letterhead.png")
+
+
+def _pdf_letterhead_image(max_width=460):
+    """Centered Image flowable of the letterhead banner, scaled to max_width
+    pt while preserving its native aspect ratio (so both logos keep their
+    proportions exactly as in the .docx letterhead). Returns None if the
+    asset file isn't present."""
+    if not os.path.exists(_PDF_LETTERHEAD_PATH):
+        return None
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(_PDF_LETTERHEAD_PATH) as im:
+            src_w, src_h = im.size
+    except Exception:
+        logger.warning("Could not read letterhead image at %s", _PDF_LETTERHEAD_PATH)
+        return None
+    img = RLImage(_PDF_LETTERHEAD_PATH, width=max_width, height=max_width * (src_h / src_w))
+    img.hAlign = "CENTER"
+    return img
 
 
 def _pdf_money(n) -> str:
@@ -2836,20 +2865,36 @@ def _pdf_dept_summary_table(codes, committed_map):
     rows = sorted(grouped.items(), key=lambda kv: -kv[1]["total"])
 
     header = ["Dept. Code", "Department", "Q1 (UGX)", "Q2 (UGX)", "Q3 (UGX)", "Q4 (UGX)", "Total Budget (UGX)", "Uncommitted Balance (UGX)"]
-    data = [header]
+    # Every cell is a Paragraph, not a plain string, so long department names
+    # and header labels wrap onto extra lines inside their own cell rather
+    # than spilling over the neighboring column.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     grand = {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0}
     for name, v in rows:
-        data.append([v["code"], name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])])
+        row_vals = [v["code"], name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])]
+        data.append([
+            Paragraph(row_vals[0], _pdf_cell), Paragraph(row_vals[1], _pdf_cell),
+            *[Paragraph(x, _pdf_cell_r) for x in row_vals[2:]],
+        ])
         for k in grand:
             grand[k] += v[k]
-    data.append(["", "Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])])
+    footer_vals = ["", "Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])]
+    data.append([
+        Paragraph(footer_vals[0], _pdf_cell_b), Paragraph(footer_vals[1], _pdf_cell_b),
+        *[Paragraph(x, _pdf_cell_rb) for x in footer_vals[2:]],
+    ])
 
-    t = Table(data, colWidths=[55, 150, 65, 65, 65, 65, 80, 90], repeatRows=1)
+    t = Table(data, colWidths=[52, 130, 65, 65, 65, 65, 80, 88], repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
     return t
 
 
 def _pdf_table_style(header_rows=1, footer_rows=0):
+    # All cell content is wrapped in Paragraph flowables (see the _pdf_cell*
+    # styles), so text wraps to a new line inside its own cell instead of
+    # overflowing into the next column/row. FONTNAME/FONTSIZE below are a
+    # fallback for any plain-string cell that might slip through; they have
+    # no effect on Paragraph cells, which use their own ParagraphStyle.
     style = [
         ("BACKGROUND", (0, 0), (-1, header_rows - 1), colors.HexColor("#146B5F")),
         ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), colors.white),
@@ -2857,6 +2902,10 @@ def _pdf_table_style(header_rows=1, footer_rows=0):
         ("FONTSIZE", (0, 0), (-1, -1), 7.5),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#C7D2D0")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("ROWBACKGROUNDS", (0, header_rows), (-1, -(footer_rows + 1)), [colors.white, colors.HexColor("#EAF6F1")]),
     ]
     if footer_rows:
@@ -2920,15 +2969,27 @@ def _pdf_revenue_summary_table(sources):
             totals[key] += out.approved_budget_amount
 
     header = ["PBS Fund Code", "Source of Financing Name", "Functional Definition", "Approved Budget (UGX)"]
-    data = [header]
+    # Paragraph-wrapped cells throughout: "Source of Financing Name" and
+    # "Functional Definition" are free-text and easily longer than their
+    # column, so they need to wrap onto extra lines rather than overlap the
+    # "Approved Budget" column next to them.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     grand_total = 0.0
     for cat in REVENUE_SUMMARY_CATEGORIES:
         amt = totals[cat["key"]]
         grand_total += amt
-        data.append([cat["pbs_fund_code"], cat["source_of_financing_name"], cat["functional_definition"], _pdf_money(amt)])
-    data.append(["", "", "Total Revenue", _pdf_money(grand_total)])
+        data.append([
+            Paragraph(cat["pbs_fund_code"], _pdf_cell),
+            Paragraph(cat["source_of_financing_name"], _pdf_cell),
+            Paragraph(cat["functional_definition"], _pdf_cell),
+            Paragraph(_pdf_money(amt), _pdf_cell_r),
+        ])
+    data.append([
+        Paragraph("", _pdf_cell_b), Paragraph("", _pdf_cell_b),
+        Paragraph("Total Revenue", _pdf_cell_b), Paragraph(_pdf_money(grand_total), _pdf_cell_rb),
+    ])
 
-    t = Table(data, colWidths=[65, 150, 220, 90], repeatRows=1)
+    t = Table(data, colWidths=[65, 155, 225, 90], repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
     return t
 
@@ -2937,7 +2998,10 @@ def _pdf_revenue_detail_table(sources):
     """The full 'Revenue Source by Category' table — one category head row per
     revenue source plus its sub rows (revenue items), matching the in-app table."""
     header = ["PBS Fund Code", "Revenue Source", "Functional Definition", "Item", "Estimate (UGX)", "Category Total (UGX)"]
-    data = [header]
+    # Paragraph-wrapped cells: revenue source names, functional definitions
+    # and item descriptions are all free text, so each wraps to extra lines
+    # inside its own cell instead of overlapping the columns beside it.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     span_cmds = []
     for r in sources:
         out = revenue_source_to_out(r)
@@ -2946,20 +3010,25 @@ def _pdf_revenue_detail_table(sources):
         if items:
             for i, it in enumerate(items):
                 data.append([
-                    r.pbs_fund_code or "" if i == 0 else "",
-                    r.source_of_financing_name if i == 0 else "",
-                    r.functional_definition or "" if i == 0 else "",
-                    it.description, _pdf_money(it.amount),
-                    _pdf_money(out.category_total) if i == 0 else "",
+                    Paragraph(r.pbs_fund_code or "" if i == 0 else "", _pdf_cell),
+                    Paragraph(r.source_of_financing_name if i == 0 else "", _pdf_cell),
+                    Paragraph(r.functional_definition or "" if i == 0 else "", _pdf_cell),
+                    Paragraph(it.description, _pdf_cell),
+                    Paragraph(_pdf_money(it.amount), _pdf_cell_r),
+                    Paragraph(_pdf_money(out.category_total) if i == 0 else "", _pdf_cell_rb),
                 ])
             span_cmds.append(("SPAN", (0, row_idx), (0, row_idx + len(items) - 1)))
             span_cmds.append(("SPAN", (1, row_idx), (1, row_idx + len(items) - 1)))
             span_cmds.append(("SPAN", (2, row_idx), (2, row_idx + len(items) - 1)))
             span_cmds.append(("SPAN", (5, row_idx), (5, row_idx + len(items) - 1)))
         else:
-            data.append([r.pbs_fund_code or "", r.source_of_financing_name, r.functional_definition or "", "\u2014", "", _pdf_money(out.category_total)])
+            data.append([
+                Paragraph(r.pbs_fund_code or "", _pdf_cell), Paragraph(r.source_of_financing_name, _pdf_cell),
+                Paragraph(r.functional_definition or "", _pdf_cell), Paragraph("\u2014", _pdf_cell),
+                Paragraph("", _pdf_cell_r), Paragraph(_pdf_money(out.category_total), _pdf_cell_rb),
+            ])
 
-    t = Table(data, colWidths=[55, 110, 140, 140, 65, 70], repeatRows=1)
+    t = Table(data, colWidths=[52, 110, 155, 130, 62, 75], repeatRows=1)
     style = _pdf_table_style(header_rows=1)
     for cmd in span_cmds:
         style.add(*cmd)
@@ -2972,6 +3041,9 @@ def _pdf_workplan_table(codes, committed_map):
     shown in the in-app table, one row per budget code."""
     header = ["Dept", "Service Area", "Programme", "Sub Programme", "Code", "Output Description", "PIAP Description",
                "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source", "Responsible Party"]
+    # Which columns hold numbers, right-aligned for readability (money/counts
+    # read better right-aligned than left-aligned).
+    numeric_cols = {8, 9, 10, 12, 13, 14, 15, 16}
     data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     for c in codes:
         row = [
@@ -2981,9 +3053,15 @@ def _pdf_workplan_table(codes, committed_map):
             _pdf_money(c.q1_amount), _pdf_money(c.q2_amount), _pdf_money(c.q3_amount), _pdf_money(c.q4_amount),
             _pdf_money(c.allocated_amount), c.funding_source or "", c.responsible_party or "",
         ]
-        data.append([Paragraph(str(v), _pdf_cell) for v in row])
+        data.append([Paragraph(str(v), _pdf_cell_r if i in numeric_cols else _pdf_cell) for i, v in enumerate(row)])
 
-    col_widths = [55, 55, 55, 55, 40, 90, 80, 80, 35, 35, 35, 40, 40, 40, 40, 40, 50, 55, 65]
+    # 19 columns on a landscape A4 page (doc margins 28pt each side) leave
+    # ~786pt of usable width. These widths sum to ~764pt, so the table fits
+    # inside that frame with room to spare — a table wider than the frame is
+    # what was causing columns to bleed into each other. Every cell is still
+    # a Paragraph, so any text too long for its column wraps onto a new line
+    # inside that cell instead of spilling into the next one.
+    col_widths = [40, 38, 38, 38, 30, 62, 54, 54, 26, 24, 24, 28, 44, 44, 44, 44, 48, 38, 42]
     t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1))
     return t
@@ -2995,11 +3073,21 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=28, bottomMargin=28, leftMargin=28, rightMargin=28)
 
-    story = [
-        Spacer(1, 100),
-        Paragraph("Karugutu Town Council", _pdf_cover_line),
-        Paragraph("Ntoroko District Local Government", _pdf_cover_line),
-        Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line),
+    letterhead = _pdf_letterhead_image()
+    story = [Spacer(1, 90)]
+    if letterhead is not None:
+        # Banner already contains the "Karugutu Town Council" wordmark
+        # between the two logos, exactly as in the .docx letterhead, so the
+        # separate "Karugutu Town Council" text line isn't repeated here.
+        story.append(letterhead)
+        story.append(Spacer(1, 18))
+        story.append(Paragraph("Ntoroko District Local Government", _pdf_cover_line))
+        story.append(Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line))
+    else:
+        story.append(Paragraph("Karugutu Town Council", _pdf_cover_line))
+        story.append(Paragraph("Ntoroko District Local Government", _pdf_cover_line))
+        story.append(Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line))
+    story += [
         Spacer(1, 40),
         Paragraph("ANNUAL WORK PLAN AND BUDGET", _pdf_cover_title),
         Paragraph(f"FY {wp.financial_year}", _pdf_cover_sub),
