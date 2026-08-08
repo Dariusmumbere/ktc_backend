@@ -7,7 +7,7 @@ import uuid
 import logging
 import datetime as dt
 from decimal import Decimal
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -210,6 +210,36 @@ def parse_amount(v) -> float:
     return value
 
 
+_LEADING_NUMBER_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+
+
+def parse_leading_number(v) -> Tuple[float, bool]:
+    """For fields (Baseline Value / Planned Target) that are frequently
+    narrative or multi-part text rather than a single number — e.g.
+    "25% of Council area mapped for vectors" or a per-quarter list like
+    "12; 4; 4; 4; 4; 4; 4" — pull out the first number found anywhere in
+    the text so the value is still usable in numeric aggregates/charts,
+    rather than collapsing straight to 0.
+
+    Returns (value, was_full_text): was_full_text is True when the raw
+    value wasn't a clean standalone number (i.e. there was extra text
+    around/after the number, or no number at all) — signals to the caller
+    that the original text is worth preserving in a *_note column.
+    """
+    value, ok, original = parse_amount_verbose(v)
+    if ok:
+        # Already a clean number (or genuinely empty) — nothing extra to
+        # preserve.
+        return value, False
+    match = _LEADING_NUMBER_RE.search(original)
+    if not match:
+        return 0.0, True
+    try:
+        return float(match.group(0).replace(",", "")), True
+    except ValueError:
+        return 0.0, True
+
+
 # --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
@@ -279,7 +309,17 @@ class BudgetCode(Base):
     piap_output_indicator = Column(Text)
     unit_of_measure = Column(String(100))
     baseline_value = Column(Float, default=0)
+    # Full original text for Baseline Value / Planned Target as entered in
+    # the source workbook. Many PIAP indicators record these as narrative
+    # or multi-part values (e.g. "25% of Council area mapped for vectors",
+    # "12; 4; 4; 4; 4; 4; 4" for per-quarter figures) rather than a single
+    # number. baseline_value/planned_target hold a best-effort numeric
+    # figure (a leading number extracted from the text, or 0) so existing
+    # charts/aggregates keep working; these _note columns preserve the
+    # full original text so nothing is lost on import.
+    baseline_note = Column(Text)
     planned_target = Column(Float, default=0)
+    target_note = Column(Text)
     actual_output = Column(Text)
     q1_amount = Column(Float, default=0)
     q2_amount = Column(Float, default=0)
@@ -480,6 +520,14 @@ def _run_lightweight_migrations():
         "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
+        # Preserves the full original Baseline Value / Planned Target text
+        # for rows where it's narrative or multi-part (e.g. "25% of
+        # Council area mapped for vectors") rather than a clean number —
+        # baseline_value/planned_target keep a best-effort numeric figure
+        # for existing charts/aggregates, these columns hold the source
+        # text so nothing is lost on import.
+        "ALTER TABLE budget_codes ADD COLUMN baseline_note TEXT",
+        "ALTER TABLE budget_codes ADD COLUMN target_note TEXT",
         "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
         "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
         "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
@@ -618,7 +666,9 @@ class BudgetCodeIn(BaseModel):
     piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: Union[float, int, str] = 0
+    baseline_note: Optional[str] = None
     planned_target: Union[float, int, str] = 0
+    target_note: Optional[str] = None
     actual_output: Optional[str] = None
     q1_amount: Union[float, int, str] = 0
     q2_amount: Union[float, int, str] = 0
@@ -638,7 +688,9 @@ class BudgetCodeUpdate(BaseModel):
     piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: Optional[Union[float, int, str]] = None
+    baseline_note: Optional[str] = None
     planned_target: Optional[Union[float, int, str]] = None
+    target_note: Optional[str] = None
     actual_output: Optional[str] = None
     q1_amount: Optional[Union[float, int, str]] = None
     q2_amount: Optional[Union[float, int, str]] = None
@@ -662,7 +714,9 @@ class BudgetCodeOut(BaseModel):
     piap_output_indicator: Optional[str] = None
     unit_of_measure: Optional[str] = None
     baseline_value: float
+    baseline_note: Optional[str] = None
     planned_target: float
+    target_note: Optional[str] = None
     actual_output: Optional[str] = None
     q1_amount: float
     q2_amount: float
@@ -683,6 +737,9 @@ class BudgetCodeImportResult(BaseModel):
     skipped: int
     departments_created: int = 0
     errors: List[str] = []
+    # Total warning count before truncation, so the UI can show "showing
+    # 30 of N" instead of silently hiding warnings past the first 30.
+    total_warnings: int = 0
 
 
 class BudgetCodeClearResult(BaseModel):
@@ -1669,7 +1726,8 @@ def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = Non
         piap_output_description=bc.piap_output_description,
         piap_output_indicator=bc.piap_output_indicator,
         unit_of_measure=bc.unit_of_measure,
-        baseline_value=parse_amount(bc.baseline_value), planned_target=parse_amount(bc.planned_target),
+        baseline_value=parse_amount(bc.baseline_value), baseline_note=bc.baseline_note,
+        planned_target=parse_amount(bc.planned_target), target_note=bc.target_note,
         actual_output=bc.actual_output,
         q1_amount=parse_amount(bc.q1_amount), q2_amount=parse_amount(bc.q2_amount),
         q3_amount=parse_amount(bc.q3_amount), q4_amount=parse_amount(bc.q4_amount),
@@ -2010,6 +2068,23 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             row_warnings.append(f"{loc}could not read '{original}' as a number for {label} — treated as 0")
         return value
 
+    # Baseline Value / Planned Target are frequently narrative or
+    # multi-part text in real PIAP work plans (e.g. "25% of Council area
+    # mapped for vectors", or a per-quarter list like "12; 4; 4; 4; 4; 4;
+    # 4"), not a single clean number. Rather than zeroing these out and
+    # losing the detail, we pull out a best-effort leading number (for
+    # existing numeric aggregates/charts) and keep the full original text
+    # in a companion *_note field. This does NOT raise a row warning —
+    # unlike Q1-Q4 amounts, non-numeric baseline/target text is expected
+    # and normal, not something to flag as a problem.
+    def _num_with_note(v):
+        value, was_text = parse_leading_number(v)
+        note = None
+        if was_text:
+            _, _, original = parse_amount_verbose(v)
+            note = original or None
+        return value, note
+
     def _text(v):
         return str(v).strip() if v is not None else None
 
@@ -2125,6 +2200,9 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
                 departments_by_normalized_name[normalized_unspecified] = dept
                 departments_created += 1
 
+        baseline_value, baseline_note = _num_with_note(data.get("baseline_value"))
+        planned_target, target_note = _num_with_note(data.get("planned_target"))
+
         bc = BudgetCode(
             work_plan_id=work_plan_id,
             department_id=dept.id,
@@ -2136,8 +2214,10 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             piap_output_description=_text(data.get("piap_output_description")),
             piap_output_indicator=_text(data.get("piap_output_indicator")),
             unit_of_measure=_text(data.get("unit_of_measure")),
-            baseline_value=_num(data.get("baseline_value"), "baseline_value", row_idx, row_warnings),
-            planned_target=_num(data.get("planned_target"), "planned_target", row_idx, row_warnings),
+            baseline_value=baseline_value,
+            baseline_note=baseline_note,
+            planned_target=planned_target,
+            target_note=target_note,
             actual_output=_text(data.get("actual_output")),
             q1_amount=_num(data.get("q1_amount"), "q1_amount", row_idx, row_warnings),
             q2_amount=_num(data.get("q2_amount"), "q2_amount", row_idx, row_warnings),
@@ -2155,7 +2235,8 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
                f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} "
                f"({skipped} skipped, {departments_created} department(s) auto-created)")
     _invalidate_budget_code_caches()
-    return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=departments_created, errors=errors[:30])
+    return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=departments_created,
+                                   errors=errors[:30], total_warnings=len(errors))
 
 
 # ---------------------------- Activities ------------------------------------
@@ -3044,13 +3125,20 @@ def _pdf_workplan_table(codes, committed_map):
                "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source", "Responsible Party"]
     # Which columns hold numbers, right-aligned for readability (money/counts
     # read better right-aligned than left-aligned).
-    numeric_cols = {8, 9, 10, 12, 13, 14, 15, 16}
+    numeric_cols = {12, 13, 14, 15, 16}
     data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     for c in codes:
+        # Baseline/Target: many PIAP indicators record these as narrative
+        # text (e.g. "25% of Council area mapped for vectors") rather than
+        # a plain figure — show the original text (baseline_note/
+        # target_note) when present, since it's the actual source-of-truth
+        # value; otherwise fall back to the numeric figure.
+        baseline_display = c.baseline_note or _pdf_money(c.baseline_value)
+        target_display = c.target_note or _pdf_money(c.planned_target)
         row = [
             c.department.name if c.department else "\u2014", c.service_area or "", c.programme or "", c.sub_programme or "",
             c.code, c.output_description or "", c.piap_output_description or "", c.piap_output_indicator or "",
-            c.unit_of_measure or "", _pdf_money(c.baseline_value), _pdf_money(c.planned_target), c.actual_output or "",
+            c.unit_of_measure or "", baseline_display, target_display, c.actual_output or "",
             _pdf_money(c.q1_amount), _pdf_money(c.q2_amount), _pdf_money(c.q3_amount), _pdf_money(c.q4_amount),
             _pdf_money(c.allocated_amount), c.funding_source or "", c.responsible_party or "",
         ]
