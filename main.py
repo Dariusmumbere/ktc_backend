@@ -2224,6 +2224,7 @@ def requisition_to_dict(r: Requisition) -> dict:
         "budget_code_id": r.budget_code_id,
         "budget_code": r.budget_code.code if r.budget_code else None,
         "budget_output": r.budget_code.output_description if r.budget_code else None,
+        "activity_budget_limit": r.budget_code.allocated_amount if r.budget_code else None,
         "activity_id": r.activity_id,
         "activity_name": r.activity.name if r.activity else None,
         "activity_details": r.activity_details,
