@@ -53,7 +53,7 @@ if not DATABASE_URL:
 
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret-in-production")
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 10
 
 # --------------------------------------------------------------------------
 # Backblaze B2 (S3-compatible) object storage
