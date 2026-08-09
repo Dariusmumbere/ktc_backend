@@ -424,12 +424,18 @@ class Requisition(Base):
     ref_no = Column(String(60), unique=True, nullable=False)
     requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
-    budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
+    budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=True)
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     activity_details = Column(Text)
     subject = Column(String(255), nullable=True)
     payment_voucher_number = Column(String(100), nullable=True)
     line_items = Column(Text, nullable=True)
+    # Free-form JSON blob holding the fields specific to the Cheque Payment
+    # Voucher section of the combined modal (Dr. To, Cheque No, Address,
+    # Authority, Approved Vote, Account No, ledger folio, etc). Kept as one
+    # column rather than a dozen new ones since these fields are entered
+    # together and displayed together.
+    voucher_data = Column(Text, nullable=True)
     amount_requested = Column(Float, nullable=False)
     status = Column(String(20), default="draft")
     current_stage = Column(String(20), default="hod")  # hod / treasurer / clerk / done
@@ -534,6 +540,12 @@ def _run_lightweight_migrations():
         "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
         "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
         "ALTER TABLE requisitions ADD COLUMN payment_voucher_number VARCHAR(100)",
+        "ALTER TABLE requisitions ADD COLUMN voucher_data TEXT",
+        # Budget Code / Activity are no longer filled in on the requisition
+        # entry screen (removed per Council request) — a requisition can now
+        # be saved without one, so the column must accept NULL. Postgres-only
+        # syntax; fails harmlessly on SQLite, which never enforced this.
+        "ALTER TABLE requisitions ALTER COLUMN budget_code_id DROP NOT NULL",
         # ref_no used to be capped at 40 chars ("KTC-REQ-YYYY-00001"); the new
         # "KTC-RQ-YY-MM-DD-<payment voucher number>" format can run longer
         # depending on what the PV number looks like, so widen the column.
@@ -838,12 +850,38 @@ class RequisitionLineItemIn(BaseModel):
     amount: float = 0
 
 
+class VoucherDataIn(BaseModel):
+    voucher_no: Optional[str] = None
+    dr_to: Optional[str] = None
+    cheque_no: Optional[str] = None
+    address: Optional[str] = None
+    voucher_date: Optional[str] = None
+    ledger_folio: Optional[str] = None
+    charge_date: Optional[str] = None
+    authority: Optional[str] = None
+    approved_vote: Optional[str] = None
+    account_no: Optional[str] = None
+    approved_estimate: Optional[str] = None
+    cheque_instruction_no: Optional[str] = None
+    payment_day: Optional[str] = None
+    payment_month_year: Optional[str] = None
+    entered_vote_book_date: Optional[str] = None
+    verified_by_date: Optional[str] = None
+    passed_payment_date: Optional[str] = None
+    inter_dept_clearance: Optional[str] = None
+    program_of_estimate: Optional[str] = None
+    sub_program: Optional[str] = None
+    item: Optional[str] = None
+
+
 class RequisitionIn(BaseModel):
-    budget_code_id: int
+    department_id: Optional[int] = None
+    budget_code_id: Optional[int] = None
     activity_id: Optional[int] = None
-    subject: str
-    payment_voucher_number: str
+    subject: Optional[str] = None
+    payment_voucher_number: Optional[str] = None
     line_items: List[RequisitionLineItemIn]
+    voucher: Optional[VoucherDataIn] = None
 
 
 class ApprovalActionIn(BaseModel):
@@ -1048,7 +1086,11 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been deactivated")
-    if payload.role and payload.role != user.role:
+    # System Administrator accounts are not limited to the "System
+    # Administrator" option on the role selector — an admin may sign in
+    # picking any role in the dropdown without it being rejected as a
+    # mismatch. Every other account must still select its own real role.
+    if payload.role and payload.role != user.role and user.role != "admin":
         raise HTTPException(
             status_code=401,
             detail="The role you selected does not match this account. Please choose the correct role and try again."
@@ -2261,25 +2303,38 @@ def create_activity(payload: ActivityIn, db: Session = Depends(get_db), admin: U
 
 # ---------------------------- Requisitions ----------------------------------
 
-def gen_ref_no(db: Session, payment_voucher_number: str) -> str:
-    """Reference number format: KTC-RQ-YY-MM-DD-<Payment Voucher Number>.
+def _dept_ref_slug(department_name: Optional[str]) -> str:
+    """Turns a department name into the short upper-case token used in the
+    reference number, e.g. "Finance & Administration" -> "FINANCE-ADMINISTRATION"."""
+    name = (department_name or "GENERAL").strip().upper()
+    slug = re.sub(r"[^A-Z0-9]+", "-", name).strip("-")
+    return slug or "GENERAL"
 
-    The payment voucher number is whitespace-stripped and upper-cased for
-    consistency; if the resulting reference collides with an existing one
-    (e.g. two requisitions raised against the same PV number on the same
-    day), a numeric suffix is appended so ref_no stays unique.
+
+def gen_ref_no(db: Session, department_name: Optional[str]) -> str:
+    """Reference number format: KTC-<DEPARTMENT NAME>-YY-MM-DD-001, 002, ...
+
+    The sequence number is per department, per day, zero-padded to 3
+    digits, and restarts at 001 the next calendar day (or for a different
+    department). Collisions are re-checked in a loop so concurrent saves
+    on the same department/day never collide.
     """
     now = dt.datetime.utcnow()
     yy = now.strftime("%y")
     mm = now.strftime("%m")
     dd = now.strftime("%d")
-    pv_clean = re.sub(r"\s+", "", (payment_voucher_number or "").strip()).upper() or "NA"
-    base = f"KTC-RQ-{yy}-{mm}-{dd}-{pv_clean}"
-    ref_no = base
-    suffix = 1
+    dept_slug = _dept_ref_slug(department_name)
+    prefix = f"KTC-{dept_slug}-{yy}-{mm}-{dd}-"
+    existing = (
+        db.query(Requisition.ref_no)
+        .filter(Requisition.ref_no.like(f"{prefix}%"))
+        .count()
+    )
+    seq = existing + 1
+    ref_no = f"{prefix}{seq:03d}"
     while db.query(Requisition).filter(Requisition.ref_no == ref_no).first():
-        suffix += 1
-        ref_no = f"{base}-{suffix}"
+        seq += 1
+        ref_no = f"{prefix}{seq:03d}"
     return ref_no
 
 
@@ -2291,6 +2346,16 @@ def _parse_requisition_line_items(raw: Optional[str]) -> list:
         return parsed if isinstance(parsed, list) else []
     except (TypeError, ValueError):
         return []
+
+
+def _parse_voucher_data(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
 
 
 def requisition_to_dict(r: Requisition) -> dict:
@@ -2312,6 +2377,7 @@ def requisition_to_dict(r: Requisition) -> dict:
         "subject": r.subject,
         "payment_voucher_number": r.payment_voucher_number,
         "line_items": _parse_requisition_line_items(r.line_items),
+        "voucher_data": _parse_voucher_data(r.voucher_data),
         "amount_requested": r.amount_requested,
         "status": r.status,
         "current_stage": r.current_stage,
@@ -2365,12 +2431,18 @@ def get_requisition(req_id: int, db: Session = Depends(get_db), user: User = Dep
 def create_requisition(payload: RequisitionIn, submit: bool = False,
                         db: Session = Depends(get_db),
                         user: User = Depends(require_roles("staff", "hod", "admin"))):
-    bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
-    if not bc:
-        raise HTTPException(status_code=400, detail="Selected budget code does not exist")
+    bc = None
+    if payload.budget_code_id:
+        bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
+        if not bc:
+            raise HTTPException(status_code=400, detail="Selected budget code does not exist")
 
-    if not payload.payment_voucher_number or not payload.payment_voucher_number.strip():
-        raise HTTPException(status_code=400, detail="Please provide the Payment Voucher Number")
+    dept_id = payload.department_id or user.department_id or (bc.department_id if bc else None)
+    if not dept_id:
+        raise HTTPException(status_code=400, detail="Please select a Department")
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=400, detail="Selected department does not exist")
 
     if not payload.line_items:
         raise HTTPException(status_code=400, detail="Please add at least one line item")
@@ -2380,14 +2452,15 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
         raise HTTPException(status_code=400, detail="Please add at least one priced line item")
 
     r = Requisition(
-        ref_no=gen_ref_no(db, payload.payment_voucher_number),
+        ref_no=gen_ref_no(db, dept.name),
         requester_id=user.id,
-        department_id=user.department_id or bc.department_id,
+        department_id=dept.id,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
         subject=payload.subject,
-        payment_voucher_number=payload.payment_voucher_number.strip(),
+        payment_voucher_number=(payload.payment_voucher_number or "").strip() or None,
         line_items=json.dumps([li.dict() for li in payload.line_items]),
+        voucher_data=json.dumps(payload.voucher.dict()) if payload.voucher else None,
         amount_requested=total,
         status="draft",
         current_stage="hod",
@@ -2406,15 +2479,16 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
 
 def _submit_requisition(r: Requisition, db: Session, user: User):
     bc = r.budget_code
-    if r.activity_id:
-        act = db.query(Activity).filter(Activity.id == r.activity_id, Activity.budget_code_id == bc.id).first()
-        if not act:
-            raise HTTPException(status_code=400, detail="The selected activity is not part of the approved work plan for this budget code")
-    if bc.available_balance < r.amount_requested:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Insufficient available budget. Available balance is UGX {bc.available_balance:,.0f}, requested UGX {r.amount_requested:,.0f}"
-        )
+    if bc:
+        if r.activity_id:
+            act = db.query(Activity).filter(Activity.id == r.activity_id, Activity.budget_code_id == bc.id).first()
+            if not act:
+                raise HTTPException(status_code=400, detail="The selected activity is not part of the approved work plan for this budget code")
+        if bc.available_balance < r.amount_requested:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient available budget. Available balance is UGX {bc.available_balance:,.0f}, requested UGX {r.amount_requested:,.0f}"
+            )
     r.status = "submitted"
     r.current_stage = "hod"
     r.updated_at = dt.datetime.utcnow()
@@ -2447,22 +2521,29 @@ def update_requisition(req_id: int, payload: RequisitionIn, db: Session = Depend
     if r.status not in ("draft", "returned"):
         raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be edited")
 
-    bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
-    if not bc:
-        raise HTTPException(status_code=400, detail="Selected budget code does not exist")
-    if not payload.payment_voucher_number or not payload.payment_voucher_number.strip():
-        raise HTTPException(status_code=400, detail="Please provide the Payment Voucher Number")
+    bc = None
+    if payload.budget_code_id:
+        bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
+        if not bc:
+            raise HTTPException(status_code=400, detail="Selected budget code does not exist")
     if not payload.line_items:
         raise HTTPException(status_code=400, detail="Please add at least one line item")
     total = sum((li.amount or 0) for li in payload.line_items)
     if total <= 0:
         raise HTTPException(status_code=400, detail="Please add at least one priced line item")
 
+    if payload.department_id:
+        dept = db.query(Department).filter(Department.id == payload.department_id).first()
+        if not dept:
+            raise HTTPException(status_code=400, detail="Selected department does not exist")
+        r.department_id = dept.id
+
     r.budget_code_id = payload.budget_code_id
     r.activity_id = payload.activity_id
     r.subject = payload.subject
-    r.payment_voucher_number = payload.payment_voucher_number.strip()
+    r.payment_voucher_number = (payload.payment_voucher_number or "").strip() or None
     r.line_items = json.dumps([li.dict() for li in payload.line_items])
+    r.voucher_data = json.dumps(payload.voucher.dict()) if payload.voucher else None
     r.amount_requested = total
     r.updated_at = dt.datetime.utcnow()
     db.commit()
@@ -2517,7 +2598,7 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     db.add(history)
 
     if payload.action == "approve":
-        if stage == "treasurer" and r.budget_code.available_balance < 0:
+        if stage == "treasurer" and r.budget_code and r.budget_code.available_balance < 0:
             raise HTTPException(status_code=400, detail="Budget has since been exhausted for this code")
         r.status = STAGE_STATUS[stage]
         nxt = NEXT_STAGE[stage]
