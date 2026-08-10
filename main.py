@@ -2092,6 +2092,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     # spelling resolve to the same existing department.
     all_departments = db.query(Department).all()
     departments_by_normalized_name = {_normalize_dept_name(d.name): d for d in all_departments}
+    departments_by_code = {_normalize_header_key(d.code): d for d in all_departments}
     existing_dept_codes = {d.code for d in all_departments}
     departments_created = 0
 
@@ -2198,6 +2199,20 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
 
         normalized_dept = _normalize_dept_name(dept_name_raw)
         dept = departments_by_normalized_name.get(normalized_dept)
+        if not dept:
+            # The PBS workbook often writes the department cell as
+            # "<code>: <name>" (e.g. "090: Community Based Services"),
+            # while a Department record stores the code and name in
+            # separate fields. Strip a leading "<code>:" / "<code> -" /
+            # "<code>." style prefix and retry the name match, and also
+            # try matching the prefix directly against a department's
+            # code, before concluding the department truly doesn't exist.
+            code_prefix_match = re.match(r"^\s*([A-Za-z0-9]+)\s*[:.\-]\s*(.+)$", dept_name_raw)
+            if code_prefix_match:
+                prefix, remainder = code_prefix_match.group(1), code_prefix_match.group(2)
+                dept = departments_by_normalized_name.get(_normalize_dept_name(remainder))
+                if not dept:
+                    dept = departments_by_code.get(_normalize_header_key(prefix))
         if not dept:
             # Departments are only ever created when a user explicitly adds
             # one (Departments page). The importer no longer creates them on
