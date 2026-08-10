@@ -1391,6 +1391,16 @@ def create_revenue_source(payload: RevenueSourceIn, db: Session = Depends(get_db
     wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
     if not wp:
         raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    dup_key = _revenue_source_dup_key(payload.pbs_fund_code, payload.source_of_financing_name)
+    if dup_key and dup_key in _existing_revenue_source_keys(db, payload.work_plan_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot add this entry — a revenue source named '{payload.source_of_financing_name}'"
+                   f"{f' under PBS Fund Code {payload.pbs_fund_code}' if payload.pbs_fund_code else ''}"
+                   f" already exists in this work plan.",
+        )
+
     r = RevenueSource(
         work_plan_id=payload.work_plan_id,
         pbs_fund_code=payload.pbs_fund_code,
@@ -1706,8 +1716,26 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
                 }
             )
 
+    # Tracks every (PBS Fund Code, Source of Financing Name) pair already on
+    # file for this work plan (seeded from the database, then grown as rows
+    # are imported) so a source already present — or repeated twice within
+    # the same workbook — is rejected instead of creating a duplicate entry.
+    existing_revenue_source_keys = _existing_revenue_source_keys(db, work_plan_id)
+
     for key in order:
         entry = grouped[key]
+
+        # Reject this group outright if it's already in the database (or
+        # was already imported earlier in this same workbook) — same rule
+        # the manual "Add Revenue Source" form enforces, applied here to
+        # every imported row/group.
+        dup_key = _revenue_source_dup_key(entry["pbs_fund_code"], entry["source_of_financing_name"])
+        if dup_key and dup_key in existing_revenue_source_keys:
+            skipped += 1
+            errors.append(
+                f"'{entry['source_of_financing_name']}' skipped — already exists in this work plan"
+            )
+            continue
 
         amount, ok, original = parse_amount_verbose(
             entry.get("approved_budget_amount")
@@ -1739,6 +1767,8 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
             )
 
         created += 1
+        if dup_key:
+            existing_revenue_source_keys.add(dup_key)
 
     db.commit()
 
@@ -1869,6 +1899,11 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
     data = payload.dict()
     for f in _BUDGET_CODE_NUMERIC_FIELDS:
         data[f] = parse_amount(data[f])
+
+    dup_key = _budget_code_dup_key(data.get("code"), data.get("output_description"))
+    if dup_key and dup_key in _existing_budget_code_keys(db, data["work_plan_id"]):
+        raise HTTPException(status_code=400, detail=f"Cannot add this entry — {_budget_code_dup_message(dup_key)}.")
+
     bc = BudgetCode(**data)
     db.add(bc)
     db.commit()
@@ -2047,6 +2082,74 @@ def _normalize_dept_name(name: Optional[str]) -> str:
 _SUBTOTAL_MARKERS = {"sub total", "subtotal", "total", "grand total"}
 
 
+# --------------------------------------------------------------------------
+# Duplicate-entry guards
+# --------------------------------------------------------------------------
+# Stops the same record from ending up in the database twice — whether it
+# arrives via the Excel importer or is typed in manually through the "Add"
+# forms. Both paths funnel through the same key/lookup helpers below, so a
+# row that's already on file is rejected the same way either way.
+#
+#   - Budget Codes: two rows are considered the same entry if they share a
+#     Budget Output Code (case/space insensitive) within the same work
+#     plan. When the code is blank, the Budget Output Description is used
+#     as the fallback identity instead. If both are blank there's nothing
+#     reliable to key on, so that one row is left alone (matches the
+#     existing "imported with a blank code/description" warning path).
+#   - Revenue Sources: two rows are considered the same entry if they share
+#     a (PBS Fund Code, Source of Financing Name) pair (case/space
+#     insensitive) within the same work plan.
+
+def _budget_code_dup_key(code: Optional[str], output_description: Optional[str]) -> Optional[tuple]:
+    norm_code = _normalize_header_key(code)
+    if norm_code:
+        return ("code", norm_code)
+    norm_desc = _normalize_header_key(output_description)
+    if norm_desc:
+        return ("desc", norm_desc)
+    return None
+
+
+def _existing_budget_code_keys(db: Session, work_plan_id: int) -> set:
+    rows = (
+        db.query(BudgetCode.code, BudgetCode.output_description)
+        .filter(BudgetCode.work_plan_id == work_plan_id)
+        .all()
+    )
+    keys = set()
+    for code, desc in rows:
+        key = _budget_code_dup_key(code, desc)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _budget_code_dup_message(dup_key: tuple) -> str:
+    field = "Budget Output Code" if dup_key[0] == "code" else "Budget Output Description"
+    return f"a budget estimate row with this {field} already exists in this work plan"
+
+
+def _revenue_source_dup_key(pbs_fund_code: Optional[str], source_of_financing_name: Optional[str]) -> Optional[tuple]:
+    norm_name = _normalize_dept_name(source_of_financing_name)
+    if not norm_name:
+        return None
+    return (_normalize_header_key(pbs_fund_code), norm_name)
+
+
+def _existing_revenue_source_keys(db: Session, work_plan_id: int) -> set:
+    rows = (
+        db.query(RevenueSource.pbs_fund_code, RevenueSource.source_of_financing_name)
+        .filter(RevenueSource.work_plan_id == work_plan_id)
+        .all()
+    )
+    keys = set()
+    for fund_code, name in rows:
+        key = _revenue_source_dup_key(fund_code, name)
+        if key:
+            keys.add(key)
+    return keys
+
+
 def _generate_department_code(name: str, existing_codes: set) -> str:
     """Best-effort short code derived from a department's name, for when a
     brand-new department has to be auto-created during import (the source
@@ -2136,6 +2239,13 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     skipped = 0
     errors: List[str] = []
 
+    # Tracks every Budget Output Code / Budget Output Description already
+    # on file for this work plan (seeded from the database, then grown as
+    # rows are imported) so a row already present — or repeated twice
+    # within the same workbook — is rejected instead of creating a
+    # duplicate entry.
+    existing_budget_code_keys = _existing_budget_code_keys(db, work_plan_id)
+
     def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None):
         value, ok, original = parse_amount_verbose(v)
         if not ok and row_warnings is not None:
@@ -2212,6 +2322,15 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
         if not output_description:
             row_warnings.append(f"Row {row_idx}: Budget Output Description was blank — imported with a blank description")
 
+        # Reject this row outright if it's already in the database (or was
+        # already imported earlier in this same workbook) — same rule the
+        # manual "Add" form enforces, applied here to every imported row.
+        dup_key = _budget_code_dup_key(code, output_description)
+        if dup_key and dup_key in existing_budget_code_keys:
+            skipped += 1
+            errors.append(f"Row {row_idx}: skipped — {_budget_code_dup_message(dup_key)}")
+            continue
+
         service_area = _text(data.get("service_area")) or last_service_area
         programme = _text(data.get("programme")) or last_programme
         sub_programme = _text(data.get("sub_programme")) or last_sub_programme
@@ -2287,6 +2406,8 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
         )
         db.add(bc)
         created += 1
+        if dup_key:
+            existing_budget_code_keys.add(dup_key)
         errors.extend(row_warnings)
 
     db.commit()
