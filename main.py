@@ -1793,13 +1793,15 @@ def _dept_label(dept: Optional["Department"]) -> Optional[str]:
     """Renders a department using just its name. Strict separation of
     concern: the PBS department code is a distinct identifier from the
     department name and is intentionally omitted everywhere a department is
-    shown to the user (Departments page, dropdowns, user records,
-    requisitions, dept-summary cards/charts, etc).
+    shown to the user (Departments page's own Department column, user
+    records, requisitions, dept-output charts, etc).
 
-    The single exception is the Annual Work Plan & Budget Estimates table's
-    Department column, which follows the Council's own workbook convention
-    of showing "<code>: <name>" (e.g. "090: Community Based Services") —
-    see _dept_code_and_name() below, used only for that one column.
+    The exceptions are the Annual Work Plan & Budget Estimates table's
+    Department column and the Department Budget Summary table (both on
+    screen and in the PDF report), plus every dropdown that lists
+    departments (Work Plan filter, Budget Code form, Requisition form, User
+    form) — those all show "<code>: <name>" (e.g. "090: Community Based
+    Services") via _dept_code_and_name() below.
     """
     if not dept:
         return None
@@ -1808,9 +1810,10 @@ def _dept_label(dept: Optional["Department"]) -> Optional[str]:
 
 def _dept_code_and_name(dept: Optional["Department"]) -> Optional[str]:
     """Renders "<code>: <name>" (e.g. "090: Community Based Services") for
-    the Annual Work Plan & Budget Estimates table's Department column ONLY.
-    Do not reuse this elsewhere — every other view must show department
-    name alone via _dept_label()."""
+    the Annual Work Plan & Budget Estimates table's Department column, the
+    Department Budget Summary table, and department dropdowns. Do not use
+    this for the Departments page's own Department column — that shows
+    department name alone via _dept_label()."""
     if not dept:
         return None
     if not dept.code:
@@ -3153,10 +3156,13 @@ def _pdf_exec_summary_flowables():
 
 
 def _pdf_dept_summary_table(codes, committed_map):
-    """Mirrors the frontend's renderDeptSummaryTable() grouping — one row per department."""
+    """Mirrors the frontend's renderDeptSummaryTable() grouping — one row per department.
+
+    Labels each row with "<code>: <name>" (via _dept_code_and_name), matching
+    the department dropdowns and this same table on screen."""
     grouped = {}
     for c in codes:
-        name = c.department.name if c.department else "Unassigned"
+        name = _dept_code_and_name(c.department) or "Unassigned"
         row = grouped.setdefault(name, {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0})
         q1, q2, q3, q4 = parse_amount(c.q1_amount), parse_amount(c.q2_amount), parse_amount(c.q3_amount), parse_amount(c.q4_amount)
         total = q1 + q2 + q3 + q4
