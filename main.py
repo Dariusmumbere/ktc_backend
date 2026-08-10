@@ -722,6 +722,12 @@ class BudgetCodeOut(BaseModel):
     work_plan_id: int
     department_id: int
     department_name: Optional[str] = None
+    # Only populated/used for the Annual Work Plan & Budget Estimates table's
+    # Department column (per Council convention of showing the PBS code
+    # alongside the name there, e.g. "090: Community Based Services").
+    # Every other screen in the system shows department_name alone — see
+    # _dept_label()'s docstring for the strict-separation rule.
+    department_code_and_name: Optional[str] = None
     service_area: Optional[str] = None
     code: str
     output_description: str
@@ -1754,11 +1760,32 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 # ---------------------------- Budget Codes ----------------------------------
 
 def _dept_label(dept: Optional["Department"]) -> Optional[str]:
-    """Renders a department using just its name — the PBS code is
-    intentionally omitted everywhere a department is shown to the user."""
+    """Renders a department using just its name. Strict separation of
+    concern: the PBS department code is a distinct identifier from the
+    department name and is intentionally omitted everywhere a department is
+    shown to the user (Departments page, dropdowns, user records,
+    requisitions, dept-summary cards/charts, etc).
+
+    The single exception is the Annual Work Plan & Budget Estimates table's
+    Department column, which follows the Council's own workbook convention
+    of showing "<code>: <name>" (e.g. "090: Community Based Services") —
+    see _dept_code_and_name() below, used only for that one column.
+    """
     if not dept:
         return None
     return dept.name
+
+
+def _dept_code_and_name(dept: Optional["Department"]) -> Optional[str]:
+    """Renders "<code>: <name>" (e.g. "090: Community Based Services") for
+    the Annual Work Plan & Budget Estimates table's Department column ONLY.
+    Do not reuse this elsewhere — every other view must show department
+    name alone via _dept_label()."""
+    if not dept:
+        return None
+    if not dept.code:
+        return dept.name
+    return f"{dept.code}: {dept.name}"
 
 
 def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
@@ -1767,6 +1794,7 @@ def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = Non
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
         department_name=_dept_label(bc.department),
+        department_code_and_name=_dept_code_and_name(bc.department),
         service_area=bc.service_area,
         code=bc.code, output_description=bc.output_description, programme=bc.programme,
         sub_programme=bc.sub_programme,
