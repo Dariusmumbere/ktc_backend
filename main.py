@@ -1754,12 +1754,11 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 # ---------------------------- Budget Codes ----------------------------------
 
 def _dept_label(dept: Optional["Department"]) -> Optional[str]:
-    """Renders a department as "090: Community Based Services" — code and
-    name together — everywhere a department is shown to the user, instead
-    of the bare name, so the PBS code is always visible alongside it."""
+    """Renders a department using just its name — the PBS code is
+    intentionally omitted everywhere a department is shown to the user."""
     if not dept:
         return None
-    return f"{dept.code}: {dept.name}" if dept.code else dept.name
+    return dept.name
 
 
 def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
@@ -3009,7 +3008,7 @@ def _pdf_dept_summary_table(codes, committed_map):
     grouped = {}
     for c in codes:
         name = c.department.name if c.department else "Unassigned"
-        row = grouped.setdefault(name, {"code": c.department.code if c.department else "\u2014", "q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0})
+        row = grouped.setdefault(name, {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0})
         q1, q2, q3, q4 = parse_amount(c.q1_amount), parse_amount(c.q2_amount), parse_amount(c.q3_amount), parse_amount(c.q4_amount)
         total = q1 + q2 + q3 + q4
         row["q1"] += q1; row["q2"] += q2; row["q3"] += q3; row["q4"] += q4
@@ -3017,27 +3016,27 @@ def _pdf_dept_summary_table(codes, committed_map):
         row["uncommitted"] += total - committed_map.get(c.id, 0.0)
     rows = sorted(grouped.items(), key=lambda kv: -kv[1]["total"])
 
-    header = ["Dept. Code", "Department", "Q1 (UGX)", "Q2 (UGX)", "Q3 (UGX)", "Q4 (UGX)", "Total Budget (UGX)", "Uncommitted Balance (UGX)"]
+    header = ["Department", "Q1 (UGX)", "Q2 (UGX)", "Q3 (UGX)", "Q4 (UGX)", "Total Budget (UGX)", "Uncommitted Balance (UGX)"]
     # Every cell is a Paragraph, not a plain string, so long department names
     # and header labels wrap onto extra lines inside their own cell rather
     # than spilling over the neighboring column.
     data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     grand = {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0}
     for name, v in rows:
-        row_vals = [v["code"], name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])]
+        row_vals = [name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])]
         data.append([
-            Paragraph(row_vals[0], _pdf_cell), Paragraph(row_vals[1], _pdf_cell),
-            *[Paragraph(x, _pdf_cell_r) for x in row_vals[2:]],
+            Paragraph(row_vals[0], _pdf_cell),
+            *[Paragraph(x, _pdf_cell_r) for x in row_vals[1:]],
         ])
         for k in grand:
             grand[k] += v[k]
-    footer_vals = ["", "Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])]
+    footer_vals = ["Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])]
     data.append([
-        Paragraph(footer_vals[0], _pdf_cell_b), Paragraph(footer_vals[1], _pdf_cell_b),
-        *[Paragraph(x, _pdf_cell_rb) for x in footer_vals[2:]],
+        Paragraph(footer_vals[0], _pdf_cell_b),
+        *[Paragraph(x, _pdf_cell_rb) for x in footer_vals[1:]],
     ])
 
-    t = Table(data, colWidths=[52, 130, 65, 65, 65, 65, 80, 88], repeatRows=1)
+    t = Table(data, colWidths=[182, 65, 65, 65, 65, 80, 88], repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
     return t
 
@@ -3273,10 +3272,10 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     story.append(Paragraph("Revenue Sources Summary", _pdf_h2))
     story.append(_pdf_revenue_summary_table(sources))
     story.append(PageBreak())
-    story.append(Paragraph(f"Revenue Source by Category for the FY {wp.financial_year}", _pdf_h2))
+    story.append(Paragraph("APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
     story.append(_pdf_revenue_detail_table(sources))
     story.append(PageBreak())
-    story.append(Paragraph(f"Annual Workplan for the FY {wp.financial_year}", _pdf_h2))
+    story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND BUDGET ESTIMATES FOR FY 2026/2027", _pdf_h2))
     story.append(_pdf_workplan_table(codes, committed_map))
 
     doc.build(story)
