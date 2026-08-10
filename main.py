@@ -1753,12 +1753,21 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 
 # ---------------------------- Budget Codes ----------------------------------
 
+def _dept_label(dept: Optional["Department"]) -> Optional[str]:
+    """Renders a department as "090: Community Based Services" — code and
+    name together — everywhere a department is shown to the user, instead
+    of the bare name, so the PBS code is always visible alongside it."""
+    if not dept:
+        return None
+    return f"{dept.code}: {dept.name}" if dept.code else dept.name
+
+
 def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
     allocated = bc.allocated_amount
     committed = committed_override if committed_override is not None else bc.committed_amount
     return BudgetCodeOut(
         id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
-        department_name=bc.department.name if bc.department else None,
+        department_name=_dept_label(bc.department),
         service_area=bc.service_area,
         code=bc.code, output_description=bc.output_description, programme=bc.programme,
         sub_programme=bc.sub_programme,
@@ -2347,7 +2356,7 @@ def requisition_to_dict(r: Requisition) -> dict:
         "requester_name": r.requester.full_name if r.requester else None,
         "requester_signature_url": r.requester.signature_url if r.requester else None,
         "department_id": r.department_id,
-        "department_name": r.department.name if r.department else None,
+        "department_name": _dept_label(r.department),
         "budget_code_id": r.budget_code_id,
         "budget_code": r.budget_code.code if r.budget_code else None,
         "budget_output": r.budget_code.output_description if r.budget_code else None,
