@@ -19,7 +19,7 @@ from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean, DateTime,
     ForeignKey, Text, Enum as SAEnum, func
 )
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session, joinedload
 from sqlalchemy.exc import IntegrityError
 
 from passlib.context import CryptContext
@@ -1874,7 +1874,17 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
     if cached is not None:
         return cached
 
-    q = db.query(BudgetCode)
+    # joinedload(BudgetCode.department) is the other half of the fix (along
+    # with _bulk_committed_amounts above it): budget_code_to_out() reads
+    # bc.department for every row (department_name / department_code_and_name).
+    # Without eager-loading, that's a lazy-loaded relationship, so every row
+    # triggered its own extra department SELECT — an N+1 pattern just like the
+    # old committed_amount one, and the real reason this endpoint could still
+    # crawl (or effectively hang, since the frontend fetch has no timeout) on
+    # a work plan with a few hundred imported rows even after that first fix.
+    # One joinedload turns "N extra queries" into "0 extra queries" by
+    # fetching departments in the same query via a SQL JOIN.
+    q = db.query(BudgetCode).options(joinedload(BudgetCode.department))
     if work_plan_id:
         q = q.filter(BudgetCode.work_plan_id == work_plan_id)
     if department_id:
@@ -3445,7 +3455,13 @@ def download_workplan_report_pdf(wp_id: int, db: Session = Depends(get_db), user
     wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
     if not wp:
         raise HTTPException(status_code=404, detail="Work plan not found")
-    codes = db.query(BudgetCode).filter(BudgetCode.work_plan_id == wp_id).order_by(BudgetCode.id.asc()).all()
+    codes = (
+        db.query(BudgetCode)
+        .options(joinedload(BudgetCode.department))
+        .filter(BudgetCode.work_plan_id == wp_id)
+        .order_by(BudgetCode.id.asc())
+        .all()
+    )
     sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == wp_id).order_by(RevenueSource.id.asc()).all()
     committed_map = _bulk_committed_amounts(db, [c.id for c in codes])
     buf = build_workplan_report_pdf(wp, codes, committed_map, sources)
@@ -3481,7 +3497,9 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
 
     budget_summary = _cache_get("dashboard_stats:budget_summary")
     if budget_summary is None:
-        all_codes = db.query(BudgetCode).all()
+        # Same joinedload fix as list_budget_codes: dept_totals below reads
+        # bc.department.name once per row, which was another silent N+1.
+        all_codes = db.query(BudgetCode).options(joinedload(BudgetCode.department)).all()
         committed_map = _bulk_committed_amounts(db, [bc.id for bc in all_codes])
 
         total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
