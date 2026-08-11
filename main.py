@@ -1335,6 +1335,23 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     _invalidate_budget_code_caches()
     return {"ok": True}
 
+def _normalize_revenue_source_fields(pbs_fund_code, source_of_financing_name, functional_definition):
+    """A past frontend bug saved the internal category shorthand ('gou',
+    'lr', 'mdp') as the Revenue Source name instead of resolving it to the
+    full Council-approved wording (e.g. 'Central Government Transfers
+    (GoU)'). Any record — old or new — whose name is exactly one of those
+    shorthands is displayed with the correct full label instead."""
+    key = (source_of_financing_name or "").strip().lower()
+    cat = _REVENUE_KEY_TO_FULL.get(key)
+    if cat:
+        return (
+            pbs_fund_code or cat["pbs_fund_code"],
+            cat["source_of_financing_name"],
+            functional_definition or cat["functional_definition"],
+        )
+    return pbs_fund_code, source_of_financing_name, functional_definition
+
+
 def revenue_source_to_out(r: RevenueSource) -> RevenueSourceOut:
     items_out = [
         RevenueSourceItemOut(id=it.id, description=it.description, amount=parse_amount(it.amount))
@@ -1344,10 +1361,13 @@ def revenue_source_to_out(r: RevenueSource) -> RevenueSourceOut:
         total = sum(it.amount for it in items_out)
     else:
         total = parse_amount(r.approved_budget_amount)
+    pbs_fund_code, source_name, func_def = _normalize_revenue_source_fields(
+        r.pbs_fund_code, r.source_of_financing_name, r.functional_definition
+    )
     return RevenueSourceOut(
-        id=r.id, work_plan_id=r.work_plan_id, pbs_fund_code=r.pbs_fund_code,
-        source_of_financing_name=r.source_of_financing_name,
-        functional_definition=r.functional_definition,
+        id=r.id, work_plan_id=r.work_plan_id, pbs_fund_code=pbs_fund_code,
+        source_of_financing_name=source_name,
+        functional_definition=func_def,
         approved_budget_amount=total,
         category_total=total,
         items=items_out,
@@ -1401,11 +1421,14 @@ def create_revenue_source(payload: RevenueSourceIn, db: Session = Depends(get_db
                    f" already exists in this work plan.",
         )
 
+    norm_fund_code, norm_source_name, norm_func_def = _normalize_revenue_source_fields(
+        payload.pbs_fund_code, payload.source_of_financing_name, payload.functional_definition
+    )
     r = RevenueSource(
         work_plan_id=payload.work_plan_id,
-        pbs_fund_code=payload.pbs_fund_code,
-        source_of_financing_name=payload.source_of_financing_name,
-        functional_definition=payload.functional_definition,
+        pbs_fund_code=norm_fund_code,
+        source_of_financing_name=norm_source_name,
+        functional_definition=norm_func_def,
         approved_budget_amount=parse_amount(payload.approved_budget_amount),
     )
     db.add(r)
@@ -1450,6 +1473,15 @@ def update_revenue_source(rev_id: int, payload: RevenueSourceUpdate, db: Session
     items_data = data.pop("items", None)  # None = leave sub rows untouched; [] or [...] = replace them
     if "approved_budget_amount" in data:
         data["approved_budget_amount"] = parse_amount(data["approved_budget_amount"])
+    if "source_of_financing_name" in data:
+        norm_fund_code, norm_source_name, norm_func_def = _normalize_revenue_source_fields(
+            data.get("pbs_fund_code", r.pbs_fund_code),
+            data.get("source_of_financing_name"),
+            data.get("functional_definition", r.functional_definition),
+        )
+        data["pbs_fund_code"] = norm_fund_code
+        data["source_of_financing_name"] = norm_source_name
+        data["functional_definition"] = norm_func_def
     for field, value in data.items():
         setattr(r, field, value)
     if items_data is not None:
@@ -3257,6 +3289,11 @@ REVENUE_SUMMARY_CATEGORIES = [
         "functional_definition": "International institutional donor funding (e.g., World Bank, UNICEF).",
     },
 ]
+
+# Lookup used by _normalize_revenue_source_fields() (defined earlier in this
+# file, near revenue_source_to_out) to resolve a saved category shorthand
+# ('gou' / 'lr' / 'mdp') back to its full Council-approved label.
+_REVENUE_KEY_TO_FULL = {cat["key"]: cat for cat in REVENUE_SUMMARY_CATEGORIES}
 
 
 def categorize_revenue_source(r: "RevenueSource") -> Optional[str]:
