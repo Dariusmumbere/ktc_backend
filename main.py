@@ -3285,28 +3285,28 @@ def _pdf_revenue_summary_table(sources):
         if key:
             totals[key] += out.approved_budget_amount
 
-    header = ["PBS Fund Code", "Source of Financing Name", "Functional Definition", "Approved Budget (UGX)"]
-    # Paragraph-wrapped cells throughout: "Source of Financing Name" and
-    # "Functional Definition" are free-text and easily longer than their
-    # column, so they need to wrap onto extra lines rather than overlap the
-    # "Approved Budget" column next to them.
+    header = ["Revenue Source", "Revenue Source Definition", "Revenue Source Amount (UGX)"]
+    # Paragraph-wrapped cells throughout: "Revenue Source" (PBS Fund Code +
+    # Source of Financing Name combined) and "Revenue Source Definition" are
+    # free-text and easily longer than their column, so they need to wrap
+    # onto extra lines rather than overlap the "Revenue Source Amount"
+    # column next to them.
     data = [[Paragraph(h, _pdf_cell_b) for h in header]]
     grand_total = 0.0
     for cat in REVENUE_SUMMARY_CATEGORIES:
         amt = totals[cat["key"]]
         grand_total += amt
         data.append([
-            Paragraph(cat["pbs_fund_code"], _pdf_cell),
-            Paragraph(cat["source_of_financing_name"], _pdf_cell),
+            Paragraph(f'{cat["pbs_fund_code"]} — {cat["source_of_financing_name"]}', _pdf_cell),
             Paragraph(cat["functional_definition"], _pdf_cell),
             Paragraph(_pdf_money(amt), _pdf_cell_r),
         ])
     data.append([
-        Paragraph("", _pdf_cell_b), Paragraph("", _pdf_cell_b),
-        Paragraph("Total Revenue", _pdf_cell_b), Paragraph(_pdf_money(grand_total), _pdf_cell_rb),
+        Paragraph("Total Revenue", _pdf_cell_b), Paragraph("", _pdf_cell_b),
+        Paragraph(_pdf_money(grand_total), _pdf_cell_rb),
     ])
 
-    t = Table(data, colWidths=[65, 155, 225, 90], repeatRows=1)
+    t = Table(data, colWidths=[220, 225, 90], repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
     return t
 
