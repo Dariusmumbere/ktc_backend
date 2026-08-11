@@ -288,18 +288,23 @@ class WorkPlan(Base):
     title = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
-    # Editable headings shown above each of the four Work Plan & Budget
-    # tables (Revenue Summary, Departmental Summary, Revenue Detail, Main
-    # Activity/Budget table). Nullable — when empty the frontend falls back
-    # to a standard template built from `financial_year`, so an admin only
-    # needs to set these when they want custom wording for a given year.
-    revenue_summary_title = Column(Text)
-    dept_summary_title = Column(Text)
-    revenue_detail_title = Column(Text)
-    main_table_title = Column(Text)
 
     budget_codes = relationship("BudgetCode", back_populates="work_plan")
     revenue_sources = relationship("RevenueSource", back_populates="work_plan")
+
+
+class TableTitle(Base):
+    """A saved heading/title for one of the Annual Work Plan tables (e.g. the
+    revenue summary table, the departmental summary table, etc). Each
+    table_key can have many saved titles (typically one per financial year)
+    so staff can switch between, edit, or add new headings without ever
+    touching code — the dropdown in the UI simply lists every title saved
+    under that table_key."""
+    __tablename__ = "table_titles"
+    id = Column(Integer, primary_key=True, index=True)
+    table_key = Column(String(50), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class BudgetCode(Base):
@@ -581,13 +586,6 @@ def _run_lightweight_migrations():
         "ALTER TABLE budget_codes ALTER COLUMN responsible_party TYPE TEXT",
         "ALTER TABLE budget_codes ALTER COLUMN unit_of_measure TYPE VARCHAR(100)",
         "ALTER TABLE budget_codes ALTER COLUMN funding_source TYPE VARCHAR(255)",
-        # Per-table, per-work-plan editable headings (Work Plan & Budget view) —
-        # lets an admin change the wording/year shown above each of the four
-        # tables without touching code, via the new Edit-heading icon buttons.
-        "ALTER TABLE work_plans ADD COLUMN revenue_summary_title TEXT",
-        "ALTER TABLE work_plans ADD COLUMN dept_summary_title TEXT",
-        "ALTER TABLE work_plans ADD COLUMN revenue_detail_title TEXT",
-        "ALTER TABLE work_plans ADD COLUMN main_table_title TEXT",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -683,22 +681,19 @@ class WorkPlanIn(BaseModel):
 class WorkPlanOut(WorkPlanIn):
     id: int
     is_active: bool
-    revenue_summary_title: Optional[str] = None
-    dept_summary_title: Optional[str] = None
-    revenue_detail_title: Optional[str] = None
-    main_table_title: Optional[str] = None
     class Config:
         from_attributes = True
 
 
-class WorkPlanHeadingsIn(BaseModel):
-    """Partial update for the four per-table headings shown on the Work
-    Plan & Budget view. Every field is optional so the Edit-heading icon
-    buttons can save just the one heading being edited."""
-    revenue_summary_title: Optional[str] = None
-    dept_summary_title: Optional[str] = None
-    revenue_detail_title: Optional[str] = None
-    main_table_title: Optional[str] = None
+class TableTitleIn(BaseModel):
+    table_key: str
+    title: str
+
+
+class TableTitleOut(TableTitleIn):
+    id: int
+    class Config:
+        from_attributes = True
 
 
 class BudgetCodeIn(BaseModel):
@@ -1352,24 +1347,6 @@ def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_d
     return wp
 
 
-@app.patch("/api/workplans/{wp_id}/headings", response_model=WorkPlanOut)
-def update_workplan_headings(wp_id: int, payload: WorkPlanHeadingsIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    """Updates one or more of the four table headings (Revenue Summary,
-    Departmental Summary, Revenue Detail, Main Activity/Budget table) for a
-    single work plan, so headings can be re-worded for other financial
-    years without touching the rest of the work plan record."""
-    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
-    if not wp:
-        raise HTTPException(status_code=404, detail="Work plan not found")
-    changes = payload.dict(exclude_unset=True)
-    for field, value in changes.items():
-        setattr(wp, field, (value or None))
-    db.commit()
-    db.refresh(wp)
-    log_action(db, admin.id, "workplan.update_headings", f"{wp.title} ({wp.financial_year})")
-    return wp
-
-
 @app.delete("/api/workplans/{wp_id}")
 def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
     wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
@@ -1382,6 +1359,75 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     log_action(db, admin.id, "workplan.delete", f"{wp.title} ({wp.financial_year})")
     _invalidate_budget_code_caches()
     return {"ok": True}
+
+
+# ---------------------------- Table Titles ------------------------------------
+# Lets staff rename the headings above the four Annual Work Plan tables (e.g.
+# to reflect a new financial year) without touching code. Every table_key
+# keeps its own list of saved titles; the frontend shows them as a dropdown
+# next to each table so a previous year's heading is never lost.
+
+DEFAULT_TABLE_TITLES = {
+    "wp_revenue_summary": "APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027",
+    "wp_dept_summary": "APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027",
+    "wp_revenue_detail": "APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027",
+    "wp_main_table": "APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027",
+}
+
+
+@app.get("/api/table-titles", response_model=List[TableTitleOut])
+def list_table_titles(table_key: str = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.query(TableTitle).filter(TableTitle.table_key == table_key).order_by(TableTitle.id.asc()).all()
+    if not rows:
+        # First time this table_key has ever been requested — seed it with
+        # the original heading so the dropdown is never empty on a fresh
+        # install, and so existing deployments see no visible change.
+        default_text = DEFAULT_TABLE_TITLES.get(table_key)
+        if default_text:
+            row = TableTitle(table_key=table_key, title=default_text)
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            rows = [row]
+    return rows
+
+
+@app.post("/api/table-titles", response_model=TableTitleOut)
+def create_table_title(payload: TableTitleIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    row = TableTitle(table_key=payload.table_key, title=payload.title.strip())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log_action(db, admin.id, "table_title.create", f"{row.table_key}: {row.title}")
+    return row
+
+
+@app.patch("/api/table-titles/{tt_id}", response_model=TableTitleOut)
+def update_table_title(tt_id: int, payload: TableTitleIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    row = db.query(TableTitle).filter(TableTitle.id == tt_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Title not found")
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    row.title = payload.title.strip()
+    db.commit()
+    db.refresh(row)
+    log_action(db, admin.id, "table_title.update", f"{row.table_key}: {row.title}")
+    return row
+
+
+@app.delete("/api/table-titles/{tt_id}")
+def delete_table_title(tt_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    row = db.query(TableTitle).filter(TableTitle.id == tt_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Title not found")
+    db.delete(row)
+    db.commit()
+    log_action(db, admin.id, "table_title.delete", f"{row.table_key}: {row.title}")
+    return {"ok": True}
+
 
 def _normalize_revenue_source_fields(pbs_fund_code, source_of_financing_name, functional_definition):
     """A past frontend bug saved the internal category shorthand ('gou',
