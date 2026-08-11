@@ -288,6 +288,15 @@ class WorkPlan(Base):
     title = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
+    # Editable headings shown above each of the four Work Plan & Budget
+    # tables (Revenue Summary, Departmental Summary, Revenue Detail, Main
+    # Activity/Budget table). Nullable — when empty the frontend falls back
+    # to a standard template built from `financial_year`, so an admin only
+    # needs to set these when they want custom wording for a given year.
+    revenue_summary_title = Column(Text)
+    dept_summary_title = Column(Text)
+    revenue_detail_title = Column(Text)
+    main_table_title = Column(Text)
 
     budget_codes = relationship("BudgetCode", back_populates="work_plan")
     revenue_sources = relationship("RevenueSource", back_populates="work_plan")
@@ -572,6 +581,13 @@ def _run_lightweight_migrations():
         "ALTER TABLE budget_codes ALTER COLUMN responsible_party TYPE TEXT",
         "ALTER TABLE budget_codes ALTER COLUMN unit_of_measure TYPE VARCHAR(100)",
         "ALTER TABLE budget_codes ALTER COLUMN funding_source TYPE VARCHAR(255)",
+        # Per-table, per-work-plan editable headings (Work Plan & Budget view) —
+        # lets an admin change the wording/year shown above each of the four
+        # tables without touching code, via the new Edit-heading icon buttons.
+        "ALTER TABLE work_plans ADD COLUMN revenue_summary_title TEXT",
+        "ALTER TABLE work_plans ADD COLUMN dept_summary_title TEXT",
+        "ALTER TABLE work_plans ADD COLUMN revenue_detail_title TEXT",
+        "ALTER TABLE work_plans ADD COLUMN main_table_title TEXT",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -667,8 +683,22 @@ class WorkPlanIn(BaseModel):
 class WorkPlanOut(WorkPlanIn):
     id: int
     is_active: bool
+    revenue_summary_title: Optional[str] = None
+    dept_summary_title: Optional[str] = None
+    revenue_detail_title: Optional[str] = None
+    main_table_title: Optional[str] = None
     class Config:
         from_attributes = True
+
+
+class WorkPlanHeadingsIn(BaseModel):
+    """Partial update for the four per-table headings shown on the Work
+    Plan & Budget view. Every field is optional so the Edit-heading icon
+    buttons can save just the one heading being edited."""
+    revenue_summary_title: Optional[str] = None
+    dept_summary_title: Optional[str] = None
+    revenue_detail_title: Optional[str] = None
+    main_table_title: Optional[str] = None
 
 
 class BudgetCodeIn(BaseModel):
@@ -1319,6 +1349,24 @@ def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_d
     db.refresh(wp)
     log_action(db, admin.id, "workplan.update", f"{wp.title} ({wp.financial_year})")
     _invalidate_budget_code_caches()
+    return wp
+
+
+@app.patch("/api/workplans/{wp_id}/headings", response_model=WorkPlanOut)
+def update_workplan_headings(wp_id: int, payload: WorkPlanHeadingsIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    """Updates one or more of the four table headings (Revenue Summary,
+    Departmental Summary, Revenue Detail, Main Activity/Budget table) for a
+    single work plan, so headings can be re-worded for other financial
+    years without touching the rest of the work plan record."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    changes = payload.dict(exclude_unset=True)
+    for field, value in changes.items():
+        setattr(wp, field, (value or None))
+    db.commit()
+    db.refresh(wp)
+    log_action(db, admin.id, "workplan.update_headings", f"{wp.title} ({wp.financial_year})")
     return wp
 
 
