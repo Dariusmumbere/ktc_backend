@@ -286,25 +286,19 @@ class WorkPlan(Base):
     id = Column(Integer, primary_key=True, index=True)
     financial_year = Column(String(20), nullable=False)   # e.g. "2026/27"
     title = Column(String(200), nullable=False)
+    # Headings shown above the 4 Work Plan & Budget tables for this work
+    # plan. Maintained here (via the New/Edit Work Plan modal) rather than
+    # per-table, so switching the work plan dropdown switches every table's
+    # heading in one go, and there is exactly one place to edit them.
+    title_revenue_summary = Column(String(500), nullable=True)
+    title_dept_summary = Column(String(500), nullable=True)
+    title_revenue_detail = Column(String(500), nullable=True)
+    title_main_table = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     budget_codes = relationship("BudgetCode", back_populates="work_plan")
     revenue_sources = relationship("RevenueSource", back_populates="work_plan")
-
-
-class TableTitle(Base):
-    """A saved heading/title for one of the Annual Work Plan tables (e.g. the
-    revenue summary table, the departmental summary table, etc). Each
-    table_key can have many saved titles (typically one per financial year)
-    so staff can switch between, edit, or add new headings without ever
-    touching code — the dropdown in the UI simply lists every title saved
-    under that table_key."""
-    __tablename__ = "table_titles"
-    id = Column(Integer, primary_key=True, index=True)
-    table_key = Column(String(50), nullable=False, index=True)
-    title = Column(String(500), nullable=False)
-    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class BudgetCode(Base):
@@ -586,6 +580,15 @@ def _run_lightweight_migrations():
         "ALTER TABLE budget_codes ALTER COLUMN responsible_party TYPE TEXT",
         "ALTER TABLE budget_codes ALTER COLUMN unit_of_measure TYPE VARCHAR(100)",
         "ALTER TABLE budget_codes ALTER COLUMN funding_source TYPE VARCHAR(255)",
+        # Per-work-plan table headings — each work plan now carries its own
+        # set of the 4 table titles shown on the Work Plan & Budget view, so
+        # switching the "Annual Work Plan" dropdown switches the headings
+        # too, and editing/creating a work plan is the only place these are
+        # maintained (no separate title-management UI on each table).
+        "ALTER TABLE work_plans ADD COLUMN title_revenue_summary VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_dept_summary VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_revenue_detail VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_main_table VARCHAR(500)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -676,22 +679,15 @@ class DepartmentOut(DepartmentIn):
 class WorkPlanIn(BaseModel):
     financial_year: str
     title: str
+    title_revenue_summary: Optional[str] = None
+    title_dept_summary: Optional[str] = None
+    title_revenue_detail: Optional[str] = None
+    title_main_table: Optional[str] = None
 
 
 class WorkPlanOut(WorkPlanIn):
     id: int
     is_active: bool
-    class Config:
-        from_attributes = True
-
-
-class TableTitleIn(BaseModel):
-    table_key: str
-    title: str
-
-
-class TableTitleOut(TableTitleIn):
-    id: int
     class Config:
         from_attributes = True
 
@@ -1314,6 +1310,20 @@ def delete_department(dep_id: int, db: Session = Depends(get_db), admin: User = 
 
 # ---------------------------- Work Plans ------------------------------------
 
+def _default_table_titles(financial_year: str) -> dict:
+    """Fallback headings for the 4 Work Plan & Budget tables, used whenever a
+    work plan is created/updated without explicit text for one of them —
+    keeps the tables from ever showing a blank heading."""
+    fy = (financial_year or "").strip()
+    suffix = f" FOR FY {fy}" if fy else ""
+    return {
+        "title_revenue_summary": f"APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES{suffix}",
+        "title_dept_summary": f"APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES{suffix}",
+        "title_revenue_detail": f"APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES{suffix}",
+        "title_main_table": f"APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES{suffix}",
+    }
+
+
 @app.get("/api/workplans", response_model=List[WorkPlanOut])
 def list_workplans(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Ordered oldest -> newest (by creation order) so the older annual work
@@ -1324,7 +1334,12 @@ def list_workplans(db: Session = Depends(get_db), user: User = Depends(get_curre
 
 @app.post("/api/workplans", response_model=WorkPlanOut)
 def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    wp = WorkPlan(**payload.dict())
+    data = payload.dict()
+    defaults = _default_table_titles(payload.financial_year)
+    for field, default_text in defaults.items():
+        if not (data.get(field) or "").strip():
+            data[field] = default_text
+    wp = WorkPlan(**data)
     db.add(wp)
     db.commit()
     db.refresh(wp)
@@ -1338,8 +1353,13 @@ def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_d
     wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
     if not wp:
         raise HTTPException(status_code=404, detail="Work plan not found")
+    defaults = _default_table_titles(payload.financial_year)
     wp.financial_year = payload.financial_year
     wp.title = payload.title
+    wp.title_revenue_summary = (payload.title_revenue_summary or "").strip() or defaults["title_revenue_summary"]
+    wp.title_dept_summary = (payload.title_dept_summary or "").strip() or defaults["title_dept_summary"]
+    wp.title_revenue_detail = (payload.title_revenue_detail or "").strip() or defaults["title_revenue_detail"]
+    wp.title_main_table = (payload.title_main_table or "").strip() or defaults["title_main_table"]
     db.commit()
     db.refresh(wp)
     log_action(db, admin.id, "workplan.update", f"{wp.title} ({wp.financial_year})")
@@ -1358,74 +1378,6 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     db.commit()
     log_action(db, admin.id, "workplan.delete", f"{wp.title} ({wp.financial_year})")
     _invalidate_budget_code_caches()
-    return {"ok": True}
-
-
-# ---------------------------- Table Titles ------------------------------------
-# Lets staff rename the headings above the four Annual Work Plan tables (e.g.
-# to reflect a new financial year) without touching code. Every table_key
-# keeps its own list of saved titles; the frontend shows them as a dropdown
-# next to each table so a previous year's heading is never lost.
-
-DEFAULT_TABLE_TITLES = {
-    "wp_revenue_summary": "APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027",
-    "wp_dept_summary": "APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027",
-    "wp_revenue_detail": "APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027",
-    "wp_main_table": "APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027",
-}
-
-
-@app.get("/api/table-titles", response_model=List[TableTitleOut])
-def list_table_titles(table_key: str = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(TableTitle).filter(TableTitle.table_key == table_key).order_by(TableTitle.id.asc()).all()
-    if not rows:
-        # First time this table_key has ever been requested — seed it with
-        # the original heading so the dropdown is never empty on a fresh
-        # install, and so existing deployments see no visible change.
-        default_text = DEFAULT_TABLE_TITLES.get(table_key)
-        if default_text:
-            row = TableTitle(table_key=table_key, title=default_text)
-            db.add(row)
-            db.commit()
-            db.refresh(row)
-            rows = [row]
-    return rows
-
-
-@app.post("/api/table-titles", response_model=TableTitleOut)
-def create_table_title(payload: TableTitleIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    if not payload.title.strip():
-        raise HTTPException(status_code=400, detail="Title cannot be empty")
-    row = TableTitle(table_key=payload.table_key, title=payload.title.strip())
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    log_action(db, admin.id, "table_title.create", f"{row.table_key}: {row.title}")
-    return row
-
-
-@app.patch("/api/table-titles/{tt_id}", response_model=TableTitleOut)
-def update_table_title(tt_id: int, payload: TableTitleIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    row = db.query(TableTitle).filter(TableTitle.id == tt_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Title not found")
-    if not payload.title.strip():
-        raise HTTPException(status_code=400, detail="Title cannot be empty")
-    row.title = payload.title.strip()
-    db.commit()
-    db.refresh(row)
-    log_action(db, admin.id, "table_title.update", f"{row.table_key}: {row.title}")
-    return row
-
-
-@app.delete("/api/table-titles/{tt_id}")
-def delete_table_title(tt_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
-    row = db.query(TableTitle).filter(TableTitle.id == tt_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Title not found")
-    db.delete(row)
-    db.commit()
-    log_action(db, admin.id, "table_title.delete", f"{row.table_key}: {row.title}")
     return {"ok": True}
 
 
