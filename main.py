@@ -450,6 +450,15 @@ class Requisition(Base):
     quarter = Column(String(10), nullable=True)
     requester_name = Column(String(150), nullable=True)
     requester_position = Column(String(150), nullable=True)
+    # Requisitioner's mobile/telephone number, typed on the paper-form
+    # replica's Requisitioner row (kept separate from the User account's
+    # own telephone, same reasoning as requester_name/requester_position).
+    requester_mobile = Column(String(40), nullable=True)
+    # Free-typed Budget Output Code as entered on the form. Kept alongside
+    # budget_code_id (which links to a real BudgetCode record when the
+    # typed code matches one on file) so a code that doesn't match any
+    # known BudgetCode is still captured rather than silently dropped.
+    budget_output_code_text = Column(String(50), nullable=True)
     payment_voucher_number = Column(String(100), nullable=True)
     line_items = Column(Text, nullable=True)
     # Free-form JSON blob holding the fields specific to the Cheque Payment
@@ -604,6 +613,10 @@ def _run_lightweight_migrations():
         "ALTER TABLE requisitions ADD COLUMN quarter VARCHAR(10)",
         "ALTER TABLE requisitions ADD COLUMN requester_name VARCHAR(150)",
         "ALTER TABLE requisitions ADD COLUMN requester_position VARCHAR(150)",
+        # Requisitioner's Mob. No. (telephone) and the free-typed Budget
+        # Output Code shown on the Funds Requisition Form replica.
+        "ALTER TABLE requisitions ADD COLUMN requester_mobile VARCHAR(40)",
+        "ALTER TABLE requisitions ADD COLUMN budget_output_code_text VARCHAR(50)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -932,6 +945,8 @@ class RequisitionIn(BaseModel):
     quarter: Optional[str] = None
     requester_name: Optional[str] = None
     requester_position: Optional[str] = None
+    requester_mobile: Optional[str] = None
+    budget_output_code_text: Optional[str] = None
     payment_voucher_number: Optional[str] = None
     line_items: List[RequisitionLineItemIn]
     voucher: Optional[VoucherDataIn] = None
@@ -2616,6 +2631,7 @@ def requisition_to_dict(r: Requisition) -> dict:
         # requisitions saved before this field existed.
         "requester_name": r.requester_name or (r.requester.full_name if r.requester else None),
         "requester_position": r.requester_position or (r.requester.position if r.requester else None),
+        "requester_mobile": r.requester_mobile or (r.requester.telephone if r.requester else None),
         "requester_account_name": r.requester.full_name if r.requester else None,
         "requester_email": r.requester.email if r.requester else None,
         "requester_role": r.requester.role if r.requester else None,
@@ -2623,9 +2639,10 @@ def requisition_to_dict(r: Requisition) -> dict:
         "department_id": r.department_id,
         "department_name": _dept_label(r.department),
         "budget_code_id": r.budget_code_id,
-        "budget_code": r.budget_code.code if r.budget_code else None,
+        "budget_code": r.budget_code.code if r.budget_code else r.budget_output_code_text,
         "budget_output": r.budget_code.output_description if r.budget_code else None,
         "activity_budget_limit": r.budget_code.allocated_amount if r.budget_code else None,
+        "activity_budget_balance": r.budget_code.available_balance if r.budget_code else None,
         "activity_id": r.activity_id,
         "activity_name": r.activity.name if r.activity else None,
         "activity_details": r.activity_details,
@@ -2719,6 +2736,8 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
         quarter=(payload.quarter or "").strip() or None,
         requester_name=(payload.requester_name or "").strip() or user.full_name,
         requester_position=(payload.requester_position or "").strip() or user.position,
+        requester_mobile=(payload.requester_mobile or "").strip() or user.telephone,
+        budget_output_code_text=(payload.budget_output_code_text or "").strip() or (bc.code if bc else None),
         payment_voucher_number=(payload.payment_voucher_number or "").strip() or None,
         line_items=json.dumps([li.dict() for li in payload.line_items]),
         voucher_data=json.dumps(payload.voucher.dict()) if payload.voucher else None,
@@ -2806,6 +2825,8 @@ def update_requisition(req_id: int, payload: RequisitionIn, db: Session = Depend
     r.quarter = (payload.quarter or "").strip() or None
     r.requester_name = (payload.requester_name or "").strip() or r.requester_name
     r.requester_position = (payload.requester_position or "").strip() or r.requester_position
+    r.requester_mobile = (payload.requester_mobile or "").strip() or r.requester_mobile
+    r.budget_output_code_text = (payload.budget_output_code_text or "").strip() or (bc.code if bc else r.budget_output_code_text)
     r.payment_voucher_number = (payload.payment_voucher_number or "").strip() or None
     r.line_items = json.dumps([li.dict() for li in payload.line_items])
     r.voucher_data = json.dumps(payload.voucher.dict()) if payload.voucher else None
