@@ -441,6 +441,15 @@ class Requisition(Base):
     activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     activity_details = Column(Text)
     subject = Column(String(255), nullable=True)
+    # Financial Year / Quarter this requisition is being drawn against, and
+    # the requisitioner's typed-in name/position on the paper-form replica
+    # (kept separate from the User account, since the Requisitioner field is
+    # now free text the person fills in themselves rather than a read-only
+    # mirror of their account name).
+    financial_year = Column(String(20), nullable=True)
+    quarter = Column(String(10), nullable=True)
+    requester_name = Column(String(150), nullable=True)
+    requester_position = Column(String(150), nullable=True)
     payment_voucher_number = Column(String(100), nullable=True)
     line_items = Column(Text, nullable=True)
     # Free-form JSON blob holding the fields specific to the Cheque Payment
@@ -589,6 +598,12 @@ def _run_lightweight_migrations():
         "ALTER TABLE work_plans ADD COLUMN title_dept_summary VARCHAR(500)",
         "ALTER TABLE work_plans ADD COLUMN title_revenue_detail VARCHAR(500)",
         "ALTER TABLE work_plans ADD COLUMN title_main_table VARCHAR(500)",
+        # Financial Year / Quarter drawn against, and the requisitioner's
+        # typed-in name/position on the Funds Requisition Form replica.
+        "ALTER TABLE requisitions ADD COLUMN financial_year VARCHAR(20)",
+        "ALTER TABLE requisitions ADD COLUMN quarter VARCHAR(10)",
+        "ALTER TABLE requisitions ADD COLUMN requester_name VARCHAR(150)",
+        "ALTER TABLE requisitions ADD COLUMN requester_position VARCHAR(150)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -913,6 +928,10 @@ class RequisitionIn(BaseModel):
     budget_code_id: Optional[int] = None
     activity_id: Optional[int] = None
     subject: Optional[str] = None
+    financial_year: Optional[str] = None
+    quarter: Optional[str] = None
+    requester_name: Optional[str] = None
+    requester_position: Optional[str] = None
     payment_voucher_number: Optional[str] = None
     line_items: List[RequisitionLineItemIn]
     voucher: Optional[VoucherDataIn] = None
@@ -2592,7 +2611,14 @@ def requisition_to_dict(r: Requisition) -> dict:
         "id": r.id,
         "ref_no": r.ref_no,
         "requester_id": r.requester_id,
-        "requester_name": r.requester.full_name if r.requester else None,
+        # Prefer the free-text "Requisitioner (Full names)" typed on the
+        # form itself; fall back to the account's own name for older
+        # requisitions saved before this field existed.
+        "requester_name": r.requester_name or (r.requester.full_name if r.requester else None),
+        "requester_position": r.requester_position or (r.requester.position if r.requester else None),
+        "requester_account_name": r.requester.full_name if r.requester else None,
+        "requester_email": r.requester.email if r.requester else None,
+        "requester_role": r.requester.role if r.requester else None,
         "requester_signature_url": r.requester.signature_url if r.requester else None,
         "department_id": r.department_id,
         "department_name": _dept_label(r.department),
@@ -2604,6 +2630,8 @@ def requisition_to_dict(r: Requisition) -> dict:
         "activity_name": r.activity.name if r.activity else None,
         "activity_details": r.activity_details,
         "subject": r.subject,
+        "financial_year": r.financial_year,
+        "quarter": r.quarter,
         "payment_voucher_number": r.payment_voucher_number,
         "line_items": _parse_requisition_line_items(r.line_items),
         "voucher_data": _parse_voucher_data(r.voucher_data),
@@ -2687,6 +2715,10 @@ def create_requisition(payload: RequisitionIn, submit: bool = False,
         budget_code_id=payload.budget_code_id,
         activity_id=payload.activity_id,
         subject=payload.subject,
+        financial_year=(payload.financial_year or "").strip() or None,
+        quarter=(payload.quarter or "").strip() or None,
+        requester_name=(payload.requester_name or "").strip() or user.full_name,
+        requester_position=(payload.requester_position or "").strip() or user.position,
         payment_voucher_number=(payload.payment_voucher_number or "").strip() or None,
         line_items=json.dumps([li.dict() for li in payload.line_items]),
         voucher_data=json.dumps(payload.voucher.dict()) if payload.voucher else None,
@@ -2770,6 +2802,10 @@ def update_requisition(req_id: int, payload: RequisitionIn, db: Session = Depend
     r.budget_code_id = payload.budget_code_id
     r.activity_id = payload.activity_id
     r.subject = payload.subject
+    r.financial_year = (payload.financial_year or "").strip() or None
+    r.quarter = (payload.quarter or "").strip() or None
+    r.requester_name = (payload.requester_name or "").strip() or r.requester_name
+    r.requester_position = (payload.requester_position or "").strip() or r.requester_position
     r.payment_voucher_number = (payload.payment_voucher_number or "").strip() or None
     r.line_items = json.dumps([li.dict() for li in payload.line_items])
     r.voucher_data = json.dumps(payload.voucher.dict()) if payload.voucher else None
@@ -3580,9 +3616,17 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
 
     budget_summary = _cache_get("dashboard_stats:budget_summary")
     if budget_summary is None:
-        # Same joinedload fix as list_budget_codes: dept_totals below reads
-        # bc.department.name once per row, which was another silent N+1.
-        all_codes = db.query(BudgetCode).options(joinedload(BudgetCode.department)).all()
+        # The dashboard's Total Budget figure mirrors the GRAND TOTAL shown
+        # on the Work Plan & Budget view, which is scoped to one Annual Work
+        # Plan at a time — so this is scoped to the current (most recently
+        # created) work plan too, rather than summing every work plan/FY
+        # ever entered, which would no longer match what "the workplan
+        # total" means on the Work Plan & Budget screen.
+        current_wp = db.query(WorkPlan).order_by(WorkPlan.id.desc()).first()
+        codes_q = db.query(BudgetCode).options(joinedload(BudgetCode.department))
+        if current_wp:
+            codes_q = codes_q.filter(BudgetCode.work_plan_id == current_wp.id)
+        all_codes = codes_q.all()
         committed_map = _bulk_committed_amounts(db, [bc.id for bc in all_codes])
 
         total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
