@@ -3616,16 +3616,12 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
 
     budget_summary = _cache_get("dashboard_stats:budget_summary")
     if budget_summary is None:
-        # The dashboard's Total Budget figure mirrors the GRAND TOTAL shown
-        # on the Work Plan & Budget view, which is scoped to one Annual Work
-        # Plan at a time — so this is scoped to the current (most recently
-        # created) work plan too, rather than summing every work plan/FY
-        # ever entered, which would no longer match what "the workplan
-        # total" means on the Work Plan & Budget screen.
-        current_wp = db.query(WorkPlan).order_by(WorkPlan.id.desc()).first()
+        # The dashboard's Total Budget figure is the total of the workplan
+        # budget across every Annual Work Plan on record — it is not tied
+        # to any one financial year, so it isn't scoped to the current
+        # (most recently created) work plan the way the Work Plan & Budget
+        # screen's GRAND TOTAL is.
         codes_q = db.query(BudgetCode).options(joinedload(BudgetCode.department))
-        if current_wp:
-            codes_q = codes_q.filter(BudgetCode.work_plan_id == current_wp.id)
         all_codes = codes_q.all()
         committed_map = _bulk_committed_amounts(db, [bc.id for bc in all_codes])
 
