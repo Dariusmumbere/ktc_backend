@@ -1211,6 +1211,12 @@ def list_users(db: Session = Depends(get_db), user: User = Depends(require_roles
 def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role supplied")
+    if payload.role == "hod" and not payload.department_id:
+        # A Head of Department account without a department assigned is
+        # invisible to the department-scoped approvals queue below (it can
+        # never match any requisition), which silently locks the HOD out of
+        # everything they're supposed to approve. Refuse to create it.
+        raise HTTPException(status_code=400, detail="Please select a Department for this Head of Department account")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="A user with this email already exists")
     new_user = User(
@@ -1252,6 +1258,13 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if data.get("email") and data["email"] != target.email:
         if db.query(User).filter(User.email == data["email"]).first():
             raise HTTPException(status_code=400, detail="A user with this email already exists")
+    # Same guard as user creation: a Head of Department account must always
+    # have a department, or the department-scoped approvals queue below
+    # will never match anything for them.
+    effective_role = data.get("role", target.role)
+    effective_department_id = data["department_id"] if "department_id" in data else target.department_id
+    if effective_role == "hod" and not effective_department_id:
+        raise HTTPException(status_code=400, detail="Please select a Department for this Head of Department account")
     password = data.pop("password", None)
     for field, value in data.items():
         setattr(target, field, value)
@@ -2726,6 +2739,12 @@ def list_requisitions(status_filter: Optional[str] = Query(None, alias="status")
     if user.role == "staff" or mine:
         q = q.filter(Requisition.requester_id == user.id)
     elif user.role == "hod":
+        if not user.department_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Your account has no Department assigned, so requisitions cannot be matched to you. "
+                       "Please ask your System Administrator to assign your Department under Users."
+            )
         q = q.filter(Requisition.department_id == user.department_id)
     if status_filter:
         q = q.filter(Requisition.status == status_filter)
@@ -2914,6 +2933,8 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
         raise HTTPException(status_code=400, detail="This requisition is not awaiting approval")
     if user.role != STAGE_ROLE[stage] and user.role != "admin":
         raise HTTPException(status_code=403, detail=f"Only the {STAGE_ROLE[stage].upper()} can act on this stage")
+    if stage == "hod" and user.role == "hod" and user.department_id != r.department_id:
+        raise HTTPException(status_code=403, detail="This requisition belongs to a different Department")
     if payload.action not in ("approve", "reject", "return"):
         raise HTTPException(status_code=400, detail="Action must be approve, reject or return")
 
@@ -2970,6 +2991,17 @@ def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_cu
         stage = stage_for_role[user.role]
         q = db.query(Requisition).filter(Requisition.current_stage == stage)
         if user.role == "hod":
+            if not user.department_id:
+                # An HOD account with no department assigned would otherwise
+                # silently match nothing here, looking exactly like "no
+                # pending approvals" even when requisitions are waiting.
+                # Surface the real problem instead of hiding it.
+                raise HTTPException(
+                    status_code=400,
+                    detail="Your account has no Department assigned, so requisitions awaiting your approval "
+                           "cannot be matched to you. Please ask your System Administrator to assign your "
+                           "Department under Users."
+                )
             q = q.filter(Requisition.department_id == user.department_id)
         reqs = q.all()
     return [requisition_to_dict(r) for r in reqs]
