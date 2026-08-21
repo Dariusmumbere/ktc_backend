@@ -249,6 +249,35 @@ def parse_leading_number(v) -> Tuple[float, bool]:
 # Models
 # --------------------------------------------------------------------------
 
+_DEPT_ABBR_STOPWORDS = {"and", "of", "the", "for", "&", "in", "to", "a", "an"}
+
+
+def department_abbreviation(name: Optional[str]) -> str:
+    """Derives a short abbreviation from a department name, for display next
+    to the department's Name in the Departments table and for use as the
+    department token in generated requisition reference numbers.
+
+    Rule: drop the LAST word of the name (departments here typically end in
+    a generic word like "Services", "Department", "Unit"), then take the
+    first letter of each remaining significant word, skipping small linking
+    words ("and", "of", "the", "&", etc.).
+
+    e.g. "Administration and Management Support Services" -> drop "Services"
+    -> "Administration and Management Support" -> skip "and" -> A + M + S
+    -> "AMS".
+    """
+    words = re.findall(r"[A-Za-z0-9]+", name or "")
+    if len(words) > 1:
+        words = words[:-1]
+    letters = [w[0].upper() for w in words if w.lower() not in _DEPT_ABBR_STOPWORDS]
+    if not letters:
+        # Every remaining word was a stopword (rare) — fall back to using
+        # them all rather than returning nothing.
+        letters = [w[0].upper() for w in words]
+    abbr = "".join(letters)[:10]
+    return abbr or "GEN"
+
+
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, index=True)
@@ -258,6 +287,13 @@ class Department(Base):
 
     users = relationship("User", back_populates="department")
     budget_codes = relationship("BudgetCode", back_populates="department")
+
+    @property
+    def abbreviation(self) -> str:
+        """Computed on the fly from `name` (see department_abbreviation()) —
+        not a stored column, so it's always in sync with the current name
+        and needs no migration."""
+        return department_abbreviation(self.name)
 
 
 class User(Base):
@@ -700,6 +736,7 @@ class DepartmentIn(BaseModel):
 
 class DepartmentOut(DepartmentIn):
     id: int
+    abbreviation: str
     class Config:
         from_attributes = True
 
@@ -2568,14 +2605,17 @@ def create_activity(payload: ActivityIn, db: Session = Depends(get_db), admin: U
 
 def _dept_ref_slug(department_name: Optional[str]) -> str:
     """Turns a department name into the short upper-case token used in the
-    reference number, e.g. "Finance & Administration" -> "FINANCE-ADMINISTRATION"."""
-    name = (department_name or "GENERAL").strip().upper()
-    slug = re.sub(r"[^A-Z0-9]+", "-", name).strip("-")
-    return slug or "GENERAL"
+    reference number — the department's abbreviation (see
+    department_abbreviation()), e.g. "Administration and Management
+    Support Services" -> "AMS". Falls back to "GENERAL" when there's no
+    department name at all."""
+    if not department_name:
+        return "GENERAL"
+    return department_abbreviation(department_name)
 
 
 def gen_ref_no(db: Session, department_name: Optional[str]) -> str:
-    """Reference number format: KTC-<DEPARTMENT NAME>-YY-MM-DD-001, 002, ...
+    """Reference number format: KTC-<DEPARTMENT ABBREVIATION>-YY-MM-DD-001, 002, ...
 
     The sequence number is per department, per day, zero-padded to 3
     digits, and restarts at 001 the next calendar day (or for a different
