@@ -283,17 +283,16 @@ class Department(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
     code = Column(String(20), unique=True, nullable=False)
+    # Stored (editable) column — defaults to department_abbreviation(name)
+    # when left blank on create/update (see create_department() /
+    # update_department()), but can be overridden by hand from the
+    # Departments page's Edit modal. Existing rows are backfilled by
+    # _backfill_department_abbreviations() below.
+    abbreviation = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     users = relationship("User", back_populates="department")
     budget_codes = relationship("BudgetCode", back_populates="department")
-
-    @property
-    def abbreviation(self) -> str:
-        """Computed on the fly from `name` (see department_abbreviation()) —
-        not a stored column, so it's always in sync with the current name
-        and needs no migration."""
-        return department_abbreviation(self.name)
 
 
 class User(Base):
@@ -653,6 +652,12 @@ def _run_lightweight_migrations():
         # Output Code shown on the Funds Requisition Form replica.
         "ALTER TABLE requisitions ADD COLUMN requester_mobile VARCHAR(40)",
         "ALTER TABLE requisitions ADD COLUMN budget_output_code_text VARCHAR(50)",
+        # Abbreviation used to be computed on the fly from the department
+        # name and wasn't editable. It's now a stored, editable column (see
+        # the Department model) so it can be corrected by hand from the
+        # Departments page's Edit modal; _backfill_department_abbreviations()
+        # below fills it in for departments that predate this column.
+        "ALTER TABLE departments ADD COLUMN abbreviation VARCHAR(20)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -674,7 +679,30 @@ def _run_lightweight_migrations():
         pass
 
 
+def _backfill_department_abbreviations():
+    """Fills in `abbreviation` for departments that predate the column
+    (added above) or were otherwise left blank, using the same
+    department_abbreviation() derivation the create form used to apply
+    automatically. Departments edited afterwards keep whatever value was
+    saved for them."""
+    db = SessionLocal()
+    try:
+        depts = db.query(Department).filter(
+            (Department.abbreviation == None) | (Department.abbreviation == "")
+        ).all()
+        if not depts:
+            return
+        for dep in depts:
+            dep.abbreviation = department_abbreviation(dep.name)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 _run_lightweight_migrations()
+_backfill_department_abbreviations()
 
 # --------------------------------------------------------------------------
 # Schemas
@@ -732,10 +760,15 @@ class UserUpdate(BaseModel):
 class DepartmentIn(BaseModel):
     name: str
     code: str
+    # Optional — left blank, it's auto-derived from `name` (see
+    # department_abbreviation()) just like before this was editable.
+    abbreviation: Optional[str] = None
 
 
-class DepartmentOut(DepartmentIn):
+class DepartmentOut(BaseModel):
     id: int
+    name: str
+    code: str
     abbreviation: str
     class Config:
         from_attributes = True
@@ -1341,7 +1374,11 @@ def create_department(payload: DepartmentIn, db: Session = Depends(get_db), admi
         raise HTTPException(status_code=400, detail="Department code already exists")
     if db.query(Department).filter(Department.name == payload.name).first():
         raise HTTPException(status_code=400, detail="Department name already exists")
-    dep = Department(**payload.dict())
+    dep = Department(
+        name=payload.name,
+        code=payload.code,
+        abbreviation=(payload.abbreviation or "").strip() or department_abbreviation(payload.name),
+    )
     db.add(dep)
     try:
         db.commit()
@@ -1365,6 +1402,7 @@ def update_department(dep_id: int, payload: DepartmentIn, db: Session = Depends(
         raise HTTPException(status_code=400, detail="Department name already exists")
     dep.name = payload.name
     dep.code = payload.code
+    dep.abbreviation = (payload.abbreviation or "").strip() or department_abbreviation(payload.name)
     try:
         db.commit()
     except IntegrityError:
