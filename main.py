@@ -3036,6 +3036,15 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     db.add(history)
 
     if payload.action == "approve":
+        # An authorizer without a signature on file would leave the approved
+        # form's signature box empty at their stage — block it here as the
+        # authoritative check (the UI also disables the button, but that's
+        # only a convenience, not the enforcement).
+        if not user.signature_path:
+            raise HTTPException(
+                status_code=400,
+                detail="You need a signature on file before you can approve a requisition. Ask an administrator to add one to your account."
+            )
         if stage == "treasurer" and r.budget_code and r.budget_code.available_balance < 0:
             raise HTTPException(status_code=400, detail="Budget has since been exhausted for this code")
         r.status = STAGE_STATUS[stage]
