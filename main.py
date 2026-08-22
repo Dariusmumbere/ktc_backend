@@ -1,4530 +1,3869 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>KTC-IPFMS — Karugutu Town Council</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<style>
-/* ==========================================================================
-KTC-IPFMS — Design tokens
-Institutional teal + ink navy + ledger gold. Serif display for authority,
-Inter for interface, Plex Mono for reference numbers & figures.
-========================================================================== */
-:root{
---navy-950:#0A1F2B;
---navy-900:#0D2B3A;
---teal-700:#0F5C52;
---teal-600:#146B5F;
---teal-500:#1C8577;
---gold-600:#B9852F;
---gold-500:#C99A3E;
---gold-100:#F6ECD8;
---paper:#F3F6F5;
---paper-raised:#FFFFFF;
---ink-900:#152226;
---ink-700:#3B4C51;
---ink-500:#6B7C80;
---line:#DEE6E4;
---line-strong:#C7D2D0;
---success:#1F8A5F;
---success-bg:#E6F4ED;
---danger:#B8382A;
---danger-bg:#FBEAE7;
---warning:#B7790E;
---warning-bg:#FBF1DE;
---info:#2E5E8C;
---info-bg:#E9F1FA;
---wp-head-bg:#F0B90B;
---wp-head-text:#3A2900;
---radius:10px;
---radius-sm:6px;
---radius-lg:16px;
---shadow-sm:0 1px 2px rgba(10,31,43,.06), 0 1px 1px rgba(10,31,43,.04);
---shadow-md:0 8px 24px rgba(10,31,43,.09), 0 2px 8px rgba(10,31,43,.06);
---shadow-lg:0 24px 56px rgba(10,31,43,.20), 0 4px 14px rgba(10,31,43,.08);
---shadow-ring:0 0 0 3px rgba(28,133,119,.14);
---shadow-gold-ring:0 0 0 3px rgba(201,154,62,.18);
---ease:cubic-bezier(.22,1,.36,1);
---font-display:'Source Serif 4', Georgia, serif;
---font-body:'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
---font-mono:'IBM Plex Mono', ui-monospace, monospace;
-}
-*,*::before,*::after{box-sizing:border-box;}
-html,body{height:100%;}
-body{
-margin:0; background:var(--paper); color:var(--ink-900);
-font-family:var(--font-body); font-size:14px; line-height:1.5;
--webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-text-rendering:optimizeLegibility;
-}
-button{font-family:inherit;}
-a{color:inherit;}
-::selection{background:var(--gold-100); color:var(--navy-950);}
-:focus-visible{outline:2px solid var(--teal-500); outline-offset:2px; border-radius:4px;}
-::-webkit-scrollbar{width:10px;height:10px;}
-::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:8px;}
-::-webkit-scrollbar-thumb:hover{background:var(--teal-500);}
-::-webkit-scrollbar-track{background:transparent;}
-@media (prefers-reduced-motion: reduce){
-*,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important;}
-}
-@keyframes fadeInUp{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
-@keyframes fadeIn{from{opacity:0;} to{opacity:1;}}
-@keyframes scaleIn{from{opacity:0; transform:scale(.97) translateY(6px);} to{opacity:1; transform:scale(1) translateY(0);}}
-/* ---------------- Seal / crest (signature element) ---------------- */
-.crest{ width:38px;height:38px;flex-shrink:0; filter:drop-shadow(0 3px 6px rgba(10,31,43,.35)); border-radius:7px; overflow:hidden; background:rgba(255,255,255,.06); }
-.crest img{width:100%;height:100%;display:block; object-fit:cover;}
-/* ---------------- Login ---------------- */
-#login-screen{
-min-height:100vh; display:flex; align-items:center; justify-content:center;
-position:relative; overflow:hidden;
-background:
-radial-gradient(1100px 600px at 15% -10%, rgba(28,133,119,.35), transparent 60%),
-radial-gradient(900px 500px at 110% 10%, rgba(201,154,62,.20), transparent 55%),
-linear-gradient(180deg, var(--navy-950), var(--navy-900) 60%, #0B2530);
-padding:24px;
-}
-#login-screen::before{
-content:""; position:absolute; inset:0; pointer-events:none; opacity:.5;
-background-image:
-repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 34px),
-repeating-linear-gradient(90deg, rgba(255,255,255,.02) 0 1px, transparent 1px 34px);
-}
-#login-screen::after{
-content:""; position:absolute; left:50%; top:50%; width:900px; height:900px; margin:-450px 0 0 -450px;
-background:radial-gradient(circle, rgba(201,154,62,.10), transparent 62%); pointer-events:none;
-}
-.login-card{
-width:100%; max-width:420px; background:var(--paper-raised); border-radius:var(--radius-lg);
-box-shadow:var(--shadow-lg); overflow:hidden; border:1px solid rgba(255,255,255,.08);
-position:relative; z-index:1; animation:scaleIn .5s var(--ease) both;
-}
-.login-band{
-background:linear-gradient(120deg, var(--teal-700), var(--teal-600) 55%, var(--teal-500));
-padding:30px 30px 26px; color:#fff; position:relative; overflow:hidden;
-}
-.login-band::before{
-content:""; position:absolute; right:-40px; top:-40px; width:160px; height:160px; border-radius:50%;
-background:radial-gradient(circle, rgba(255,255,255,.14), transparent 70%);
-}
-.login-band::after{
-content:""; position:absolute; inset:auto 0 0 0; height:4px;
-background:linear-gradient(90deg, var(--gold-500), rgba(201,154,62,.15) 75%, transparent);
-}
-.login-band .brand-row{display:flex; align-items:center; gap:12px; position:relative;}
-.login-band h1{font-family:var(--font-display); font-size:19.5px; font-weight:600; margin:0; letter-spacing:.15px;}
-.login-band p{margin:4px 0 0; font-size:12.5px; color:rgba(255,255,255,.85); letter-spacing:.1px;}
-.login-body{padding:30px 30px 32px;}
-.field{margin-bottom:16px;}
-.field label{display:block; font-size:11px; font-weight:700; color:var(--ink-700); margin-bottom:6px; letter-spacing:.6px; text-transform:uppercase;}
-.field input, .field select, .field textarea{
-width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:var(--radius-sm);
-font-size:14px; font-family:inherit; background:#fff; color:var(--ink-900); transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
-}
-.field input:hover, .field select:hover{border-color:var(--line-strong);}
-.field input:focus, .field select:focus, .field textarea:focus{
-border-color:var(--teal-500); box-shadow:var(--shadow-ring);
-}
-.password-field-wrap{position:relative;}
-.password-field-wrap input{padding-right:42px;}
-.password-toggle-btn{
-position:absolute; right:4px; top:50%; transform:translateY(-50%);
-width:32px; height:32px; display:flex; align-items:center; justify-content:center;
-background:transparent; border:none; border-radius:6px; padding:0; margin:0;
-color:var(--ink-500); cursor:pointer; transition:color .15s var(--ease), background .15s var(--ease);
-}
-.password-toggle-btn svg{width:18px; height:18px;}
-.password-toggle-btn:hover{color:var(--teal-600); background:var(--paper);}
-.password-toggle-btn:focus-visible{outline:2px solid var(--teal-500); outline-offset:1px;}
-.rev-custom-field{display:none; margin-top:8px;}
-.btn{
-display:inline-flex; align-items:center; justify-content:center; gap:8px;
-padding:10px 18px; border-radius:var(--radius-sm); border:1px solid transparent;
-font-weight:600; font-size:13.5px; cursor:pointer; transition:transform .12s var(--ease), box-shadow .18s var(--ease), background .15s var(--ease), border-color .15s var(--ease);
-white-space:nowrap; position:relative;
-}
-.btn:active{transform:translateY(1px) scale(.99);}
-.btn-icon{width:14px; height:14px; flex-shrink:0;}
-.foot-nowrap{flex-wrap:nowrap;}
-@media (max-width:480px){
-.foot-nowrap{gap:6px;}
-.foot-nowrap .btn{padding:10px 10px; font-size:12.5px;}
-}
-.btn-primary{background:var(--teal-700); color:#fff; box-shadow:var(--shadow-sm);}
-.btn-primary:hover{background:var(--teal-600); box-shadow:0 6px 16px rgba(15,92,82,.32);}
-.btn-primary:focus-visible{box-shadow:var(--shadow-ring);}
-.btn-gold{background:var(--gold-600); color:#fff;}
-.btn-gold:hover{background:var(--gold-500); box-shadow:0 6px 16px rgba(185,133,47,.32);}
-.btn-ghost{background:transparent; color:var(--ink-700); border-color:var(--line);}
-.btn-ghost:hover{background:var(--paper); border-color:var(--line-strong);}
-.btn-danger{background:var(--danger); color:#fff;}
-.btn-danger:hover{background:#a03024; box-shadow:0 6px 16px rgba(184,56,42,.28);}
-.btn-block{width:100%;}
-.btn:disabled{opacity:.55; cursor:not-allowed; transform:none;}
-.login-error{
-background:var(--danger-bg); color:var(--danger); border:1px solid rgba(184,56,42,.25);
-padding:10px 12px; border-radius:var(--radius-sm); font-size:13px; margin-bottom:14px; display:none;
-animation:fadeIn .2s var(--ease);
-}
-.login-hint{margin-top:18px; font-size:11.5px; color:var(--ink-500); text-align:center; line-height:1.6;}
-/* ---------------- App shell ---------------- */
-#app-screen{display:none; height:100vh; overflow:hidden;}
-.shell{display:flex; height:100vh;}
-.sidebar{
-width:232px; flex-shrink:0; background:linear-gradient(185deg, var(--navy-950), var(--navy-900));
-color:#DCE7E5; display:flex; flex-direction:column; padding:18px 12px;
-border-right:1px solid rgba(255,255,255,.05); position:relative;
-}
-.sidebar::after{
-content:""; position:absolute; right:0; top:0; bottom:0; width:1px;
-background:linear-gradient(180deg, transparent, rgba(201,154,62,.35), transparent);
-}
-.sidebar .brand{display:flex; align-items:center; gap:10px; padding:6px 8px 18px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:14px;}
-.sidebar .brand-name{font-family:var(--font-display); font-size:14px; font-weight:600; color:#fff; line-height:1.25;}
-.sidebar .brand-name small{display:block; font-family:var(--font-body); font-weight:500; font-size:10px; color:rgba(255,255,255,.55); letter-spacing:.6px; text-transform:uppercase; margin-top:2px;}
-.nav-group{margin-bottom:6px;}
-.nav-label{font-size:10px; text-transform:uppercase; letter-spacing:.9px; color:rgba(255,255,255,.35); padding:14px 10px 6px; font-weight:700;}
-.nav-item{
-display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer;
-font-size:13px; font-weight:500; color:rgba(220,231,229,.82); margin-bottom:2px; transition:background .15s var(--ease), color .15s var(--ease), transform .12s var(--ease);
-border:none; background:none; width:100%; text-align:left;
-}
-.nav-item svg{width:17px;height:17px; flex-shrink:0; opacity:.85; transition:opacity .15s var(--ease);}
-.nav-item:hover{background:rgba(255,255,255,.07); color:#fff; transform:translateX(1px);}
-.nav-item:hover svg{opacity:1;}
-.nav-item.active{background:linear-gradient(90deg, var(--teal-700), rgba(15,92,82,.75)); color:#fff; box-shadow:inset 3px 0 0 var(--gold-500);}
-.nav-item.active svg{opacity:1;}
-.sidebar-footer{margin-top:auto; padding:10px 8px 4px; border-top:1px solid rgba(255,255,255,.08);}
-.user-chip{display:flex; align-items:center; gap:9px; padding:8px; border-radius:8px; transition:background .15s var(--ease); cursor:pointer; border:none; background:none; width:100%; text-align:left;}
-.user-chip:hover{background:rgba(255,255,255,.05);}
-.avatar{
-width:33px;height:33px;border-radius:50%; background:linear-gradient(135deg, var(--gold-500), var(--gold-600));
-color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12.5px; flex-shrink:0;
-box-shadow:0 0 0 2px rgba(255,255,255,.12), 0 2px 6px rgba(0,0,0,.3);
-}
-.user-chip .u-name{font-size:12.5px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.user-chip .u-role{font-size:10.5px; color:rgba(255,255,255,.5); text-transform:capitalize;}
-.logout-link{font-size:11.5px; color:rgba(255,255,255,.45); margin-top:6px; display:block; padding:0 8px; cursor:pointer; transition:color .15s var(--ease);}
-.logout-link:hover{color:var(--gold-500);}
-.main{flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden;}
-.topbar{
-min-height:64px; flex-shrink:0; background:rgba(255,255,255,.86); backdrop-filter:blur(10px) saturate(1.4); -webkit-backdrop-filter:blur(10px) saturate(1.4);
-border-bottom:1px solid var(--line); box-shadow:0 1px 0 rgba(10,31,43,.02);
-display:flex; align-items:center; justify-content:space-between; padding:0 22px; position:relative; z-index:10; flex-wrap:wrap; gap:10px;
-}
-.topbar-title{font-family:var(--font-display); font-size:22px; font-weight:600; letter-spacing:.1px; color:var(--teal-700);}
-.topbar-sub{font-size:11.5px; color:var(--ink-500); margin-top:1px;}
-.topbar-title-wrap{min-width:0; flex:1;}
-.topbar-title-wrap-center{text-align:center;}
-.topbar-title-lg{font-size:23px; font-weight:600; line-height:1.32; color:var(--teal-700); letter-spacing:.1px; max-width:640px; margin:0 auto;}
-@media (min-width:901px){
-.topbar-title-wrap-center{display:flex; justify-content:center;}
-.topbar-title-lg{white-space:nowrap; max-width:none; font-size:clamp(13px,1.5vw,22px);}
-}
-.topbar-right{display:flex; align-items:center; gap:14px; padding:10px 0;}
-.topbar.topbar-workplan{border-bottom:none !important; box-shadow:none !important;}
-.topbar.topbar-workplan .topbar-title-wrap{display:none !important;}
-#view-workplan > .card:first-of-type{flex-wrap:nowrap !important;}
-#view-workplan > .card:first-of-type #wp-select{width:auto !important; min-width:0 !important; flex:1 1 auto !important;}
-#view-workplan > .card:first-of-type > div[style*="display:flex"]{flex-shrink:0 !important;}
-@media (max-width:640px){
-#view-workplan > .card:first-of-type{flex-wrap:wrap !important;}
-#view-workplan > .card:first-of-type #wp-select{width:100% !important;}
-}
-#wp-main-table-wrap{max-height:600px !important;}
-.icon-btn{
-position:relative; width:36px;height:36px; border-radius:9px; border:1px solid var(--line); background:#fff;
-display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink-700);
-transition:background .15s var(--ease), border-color .15s var(--ease), transform .12s var(--ease);
-}
-.icon-btn:hover{background:var(--paper); border-color:var(--teal-500); color:var(--teal-700); transform:translateY(-1px);}
-.icon-btn:active{transform:translateY(0);}
-.icon-btn svg{width:17px;height:17px;}
-.icon-btn-sm{width:28px;height:28px;border-radius:7px;}
-.icon-btn-sm svg{width:14px;height:14px;}
-/* ---------------- Table titles + their icon actions (Add / Import etc) ---------------- */
-.table-title-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-.table-title-actions{display:flex; align-items:center; gap:6px; flex-shrink:0;}
-/* Pull the Annual Work Plan title (dropdown container) right up to the top
-   of the view, removing the large empty band that used to sit above it. */
-.content:has(> #view-workplan.active){padding-top:0;}
-#view-workplan{margin:0;}
-#view-workplan > .card:first-of-type{margin:0 !important; padding-top:8px !important; padding-bottom:10px !important;}
-.badge-dot{
-position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:9px;
-background:var(--danger); color:#fff; font-size:9.5px; font-weight:700; display:flex; align-items:center; justify-content:center;
-box-shadow:0 0 0 2px #fff;
-}
-.content{flex:1; overflow-y:auto; padding:24px 26px 60px;}
-.view{display:none;}
-.view.active{display:block; animation:fadeInUp .35s var(--ease) both;}
-/* ---------------- Notification panel ---------------- */
-.notif-panel{
-position:absolute; top:58px; right:22px; width:340px; max-height:420px; overflow-y:auto;
-background:rgba(255,255,255,.98); backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow-lg);
-z-index:80; display:none;
-}
-.notif-panel.show{display:block; animation:scaleIn .2s var(--ease);}
-.notif-panel-head{display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line);}
-.notif-panel-head h4{margin:0; font-size:13px;}
-.notif-panel-head span{font-size:11.5px; color:var(--teal-600); cursor:pointer; font-weight:600; transition:color .15s var(--ease);}
-.notif-panel-head span:hover{color:var(--teal-700);}
-.notif-item{padding:11px 14px; border-bottom:1px solid #F0F3F2; font-size:12.5px; display:flex; gap:9px; transition:background .12s var(--ease);}
-.notif-item:hover{background:#FAFCFB;}
-.notif-item:last-child{border-bottom:none;}
-.notif-item .dot{width:7px;height:7px;border-radius:50%; margin-top:5px; flex-shrink:0; background:var(--teal-500);}
-.notif-item.unread{background:#F7FBFA;}
-.notif-item .msg{color:var(--ink-900);}
-.notif-item .time{color:var(--ink-500); font-size:10.5px; margin-top:2px;}
-.notif-empty{padding:24px 14px; text-align:center; color:var(--ink-500); font-size:12.5px;}
-/* ---------------- Section headers, cards ---------------- */
-.section-head{display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; gap:12px;}
-.section-head h2{font-family:var(--font-display); font-size:22px; margin:0; font-weight:600; letter-spacing:.1px;}
-.section-head .sub{color:var(--ink-500); font-size:12.5px; margin-top:2px;}
-.card{background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow-sm); transition:box-shadow .2s var(--ease), border-color .2s var(--ease);}
-.card-pad{padding:18px 20px;}
-/* Dashboard stat cards (home tab — deliberately distinct treatment) */
-.stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:22px;}
-.stat-card{
-background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
-padding:18px 20px; position:relative; overflow:hidden;
-transition:transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
-}
-.stat-card:hover{transform:translateY(-2px); box-shadow:var(--shadow-md); border-color:var(--line-strong);}
-.stat-card::before{
-content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--teal-600);
-}
-.stat-card::after{
-content:""; position:absolute; right:-30px; top:-30px; width:90px; height:90px; border-radius:50%;
-background:radial-gradient(circle, rgba(15,92,82,.06), transparent 70%); pointer-events:none;
-}
-.stat-card.gold::before{background:var(--gold-600);}
-.stat-card.gold::after{background:radial-gradient(circle, rgba(185,133,47,.08), transparent 70%);}
-.stat-card.danger::before{background:var(--danger);}
-.stat-card.danger::after{background:radial-gradient(circle, rgba(184,56,42,.07), transparent 70%);}
-.stat-card.navy::before{background:var(--navy-900);}
-.stat-card.navy::after{background:radial-gradient(circle, rgba(10,31,43,.08), transparent 70%);}
-.stat-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.6px; color:var(--ink-500); font-weight:700;}
-.stat-value{font-family:var(--font-mono); font-size:29px; font-weight:600; margin-top:8px; color:var(--navy-950); letter-spacing:-.2px;}
-.stat-foot{font-size:11.5px; color:var(--ink-500); margin-top:6px;}
-.dash-grid{display:grid; grid-template-columns:1.4fr 1fr; gap:18px;}
-@media (max-width:1100px){ .dash-grid{grid-template-columns:1fr;} .stat-grid{grid-template-columns:repeat(2,1fr);} }
-.util-bar-track{height:10px; border-radius:6px; background:#EAF0EF; overflow:hidden; margin-top:10px; box-shadow:inset 0 1px 2px rgba(10,31,43,.06);}
-.util-bar-fill{height:100%; background:linear-gradient(90deg, var(--teal-600), var(--teal-500)); border-radius:6px; transition:width .7s var(--ease); box-shadow:0 0 8px rgba(28,133,119,.5);}
-.timeline{list-style:none; margin:0; padding:0;}
-.timeline li{display:flex; gap:12px; padding:11px 0; border-bottom:1px solid #F0F3F2; transition:transform .15s var(--ease);}
-.timeline li:hover{transform:translateX(2px);}
-.timeline li:last-child{border-bottom:none;}
-.tl-stamp{
-width:30px; height:30px; border-radius:50%; border:2px solid var(--teal-600); color:var(--teal-600);
-display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px; font-weight:700;
-background:#F7FBFA; box-shadow:0 1px 3px rgba(10,31,43,.08);
-}
-.tl-body{flex:1; min-width:0;}
-.tl-title{font-size:12.5px; font-weight:600;}
-.tl-meta{font-size:11px; color:var(--ink-500); margin-top:1px;}
-/* ---------------- Table styling (echoes the reference work-plan grid) ---------------- */
-.table-wrap{overflow-x:auto; border-radius:var(--radius); border:1px solid var(--line); box-shadow:var(--shadow-sm);}
-table{width:100%; border-collapse:collapse; min-width:720px; background:#fff;}
-thead th{
-background:var(--navy-950); color:#fff; font-size:10.5px; text-transform:uppercase; letter-spacing:.5px;
-padding:12px; text-align:left; font-weight:700; white-space:nowrap; position:sticky; top:0;
-box-shadow:0 1px 0 rgba(201,154,62,.35);
-}
-/* Work Plan & Budget grid gets a distinct deep-yellow header treatment
-(per Council request) instead of the navy header used elsewhere. */
-#view-workplan .table-wrap thead th{
-background:var(--wp-head-bg);
-color:var(--wp-head-text);
-box-shadow:0 1px 0 rgba(58,41,0,.35);
-}
-/* Department Budget Summary table (nested white card, inside the teal
-header band) needs its own explicit, high-contrast treatment — the
-deep-yellow work-plan header and the app-wide near-white row striping
-are both too low-contrast in that context to read clearly. Header uses
-solid navy + white text (like the main app tables); rows alternate a
-clearly visible mint/white band with bold, dark, explicitly-colored text
-so figures stand out regardless of the surrounding white card.
-Column titles are centered; row content is left aligned, per Council
-request, overriding the generic .num right-alignment for this table. */
-#wp-dept-summary-table thead th{
-background:var(--teal-700) !important;
-color:#FFFFFF !important;
-box-shadow:0 1px 0 rgba(201,154,62,.35) !important;
-text-align:center;
-}
-#wp-dept-summary-body tr:nth-child(odd){background:#D6EEE6;}
-#wp-dept-summary-body tr:nth-child(even){background:#FFFFFF;}
-#wp-dept-summary-body tr{border-bottom:1px solid var(--line-strong);}
-#wp-dept-summary-body tr:hover{background:var(--gold-100);}
-#wp-dept-summary-body td{color:var(--ink-900); font-weight:600; text-align:left;}
-#wp-dept-summary-body td.mono, #wp-dept-summary-body td.num{color:var(--navy-950); font-weight:700; text-align:left;}
-#wp-dept-summary-wrap tfoot td{text-align:left;}
-#view-workplan .table-wrap tfoot tr{background:#EAF0EF !important;}
-#view-workplan .table-wrap tfoot td{color:var(--navy-950); font-weight:700;}
-/* Requisitions list & Approval Queue tables — widened by at least half so
-key columns (Ref No., Requester, Status/Stage, Date) have sufficient room
-instead of feeling cramped; the surrounding .table-wrap already scrolls
-horizontally if needed. */
-#req-list-table{min-width:1080px;}
-#req-list-table th:nth-child(1), #req-list-table td:nth-child(1){min-width:150px;}
-#req-list-table th:nth-child(2), #req-list-table td:nth-child(2){min-width:190px;}
-#req-list-table th:nth-child(3), #req-list-table td:nth-child(3){min-width:160px;}
-#req-list-table th:nth-child(6), #req-list-table td:nth-child(6){min-width:150px;}
-#req-list-table th:nth-child(7), #req-list-table td:nth-child(7){min-width:150px;}
-#req-list-table th:nth-child(8), #req-list-table td:nth-child(8){min-width:150px;}
-#approval-queue-table{min-width:1080px;}
-#approval-queue-table th:nth-child(1), #approval-queue-table td:nth-child(1){min-width:150px;}
-#approval-queue-table th:nth-child(2), #approval-queue-table td:nth-child(2){min-width:190px;}
-#approval-queue-table th:nth-child(3), #approval-queue-table td:nth-child(3){min-width:160px;}
-#approval-queue-table th:nth-child(7), #approval-queue-table td:nth-child(7){min-width:150px;}
-/* Users & Roles table — widened so the Name/Email/Role/Department columns
-each have sufficient room instead of feeling cramped; the surrounding
-.table-wrap already scrolls horizontally if needed. */
-#users-table{min-width:1120px;}
-#users-table th:nth-child(1), #users-table td:nth-child(1){min-width:170px;}
-#users-table th:nth-child(2), #users-table td:nth-child(2){min-width:220px;}
-#users-table th:nth-child(3), #users-table td:nth-child(3){min-width:160px;}
-#users-table th:nth-child(4), #users-table td:nth-child(4){min-width:140px;}
-#users-table th:nth-child(5), #users-table td:nth-child(5){min-width:130px;}
-#users-table th:nth-child(6), #users-table td:nth-child(6){min-width:160px;}
-#users-table th:nth-child(7), #users-table td:nth-child(7){min-width:110px;}
-#users-table th:nth-child(8), #users-table td:nth-child(8){min-width:90px;}
-#users-table th:nth-child(9), #users-table td:nth-child(9){min-width:90px;}
-tbody td{padding:11.5px 12px; border-bottom:1px solid #EEF2F1; font-size:12.5px; white-space:normal; overflow-wrap:break-word; word-break:break-word; vertical-align:top;}
-tbody tr{transition:background .12s var(--ease);}
-tbody tr:nth-child(even){background:#FAFCFB;}
-tbody tr:hover{background:var(--gold-100);}
-tbody tr:last-child td {
-border-bottom: none;
-}
-td.wrap, th.wrap{white-space:normal;}
-.num{font-family:var(--font-mono); text-align:center;}
-.mono{font-family:var(--font-mono);}
-/* ---------------- Revenue Sources Summary table --------------------------
-Same high-contrast treatment as the Department Budget Summary table
-(solid teal header, alternating mint/white rows), displayed above it.
-THIS TABLE STAYS EXACTLY AS IT IS — its Approved Budget Amount column is
-obtained automatically from the Revenue Source by Category for the FY 2026/27 below it (each row's
-Category Total = sum of that source's sub rows). Row content (body rows)
-is left-aligned per Council request — only the column headers stay
-centered. */
-#wp-revenue-summary-table thead th{
-background:var(--teal-700) !important;
-color:#FFFFFF !important;
-box-shadow:0 1px 0 rgba(201,154,62,.35) !important;
-text-align:center;
-}
-#wp-revenue-summary-body tr:nth-child(odd){background:#D6EEE6;}
-#wp-revenue-summary-body tr:nth-child(even){background:#FFFFFF;}
-#wp-revenue-summary-body tr{border-bottom:1px solid var(--line-strong);}
-#wp-revenue-summary-body tr:hover{background:var(--gold-100);}
-#wp-revenue-summary-body td{color:var(--ink-900); font-weight:600; text-align:left; vertical-align:top;}
-#wp-revenue-summary-body td.mono, #wp-revenue-summary-body td.num{color:var(--navy-950); font-weight:700; text-align:left;}
-#wp-revenue-summary-wrap tfoot td{text-align:left;}
-#wp-revenue-summary-wrap{max-height:260px; overflow-x:auto; overflow-y:auto;}
-#wp-revenue-summary-wrap thead th{position:sticky; top:0; z-index:3;}
-#wp-revenue-summary-wrap tfoot tr{position:sticky; bottom:0; z-index:3; text-align:left !important;}
-#wp-revenue-summary-table thead th{padding:8px 9px; font-size:9.5px; line-height:1.25;}
-#wp-revenue-summary-body td{padding:7px 9px; font-size:11.5px;}
-/* Functional Definition column in the summary table: allow each point to
-sit on its own line (line breaks are inserted when the data is rendered)
-rather than running on as one continuous line of text. */
-#wp-revenue-summary-body td.rev-func-def{white-space:normal; line-height:1.5;}
-#wp-revenue-detail-wrap{max-height:420px; overflow-x:auto; overflow-y:auto;}
-#wp-revenue-detail-wrap thead th{
-position:sticky; top:0; z-index:3;
-background:var(--teal-700) !important; color:#FFFFFF !important;
-box-shadow:0 1px 0 rgba(201,154,62,.35) !important; text-align:center;
-padding:8px 9px; font-size:9.5px; line-height:1.25;
-}
-#wp-revenue-detail-body td{padding:7px 9px; font-size:11.5px; color:var(--ink-900); text-align:left; vertical-align:top;}
-#wp-revenue-detail-body td.num, #wp-revenue-detail-body td.mono{text-align:left;}
-#wp-revenue-detail-body tr.rev-cat-head td{background:var(--gold-100); font-weight:700; color:var(--navy-950); border-bottom:1px solid var(--line-strong);}
-#wp-revenue-detail-body tr.rev-cat-head:hover td{background:var(--gold-100);}
-#wp-revenue-detail-body tr.rev-item-row td{background:#FFFFFF;}
-#wp-revenue-detail-body tr.rev-item-row:hover td{background:#FAFCFB;}
-#wp-revenue-detail-body tr.rev-item-row td.rev-item-desc{padding-left:30px; color:var(--ink-700);}
-#wp-revenue-detail-body tr.rev-total-row td{background:#D6EEE6; font-weight:700; color:var(--navy-950); border-bottom:1px solid var(--line-strong);}
-#wp-revenue-detail-body tr.rev-total-row:hover td{background:#D6EEE6;}
-#wp-revenue-detail-body tr.rev-add-row td{background:#FFF9EC; padding:8px 9px;}
-#wp-revenue-detail-body tr.rev-add-row input{width:100%; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12px; background:#fff;}
-#wp-revenue-detail-body tr.rev-add-row input:focus{border-color:var(--teal-500); outline:none; box-shadow:var(--shadow-ring);}
-/* Functional Definition column in the Revenue Entry (detail) table: each
-point begins on its own line rather than running together as one line. */
-#wp-revenue-detail-body td.rev-func-def{white-space:normal; line-height:1.5;}
-.rev-auto-chip{display:inline-flex; align-items:center; gap:4px; background:var(--success-bg); color:var(--success); border-radius:10px; padding:1.5px 8px; font-size:9.5px; font-weight:700; margin-left:6px; vertical-align:middle;}
-.rev-auto-chip::before{content:""; width:6px; height:6px; border-radius:2px; background:var(--success);}
-/* ---------------- Work Plan & Budget: compact, height-constrained,
-dual-scrollable tables (Department Budget Summary + main grid) ---------- */
-#wp-dept-summary-wrap{overflow-x:auto;}
-#wp-main-table-wrap{max-height:440px; min-height:220px; overflow-x:auto; overflow-y:auto;}
-#wp-dept-summary-wrap thead th, #wp-main-table-wrap thead th{position:sticky; top:0; z-index:3;}
-#wp-dept-summary-wrap tfoot tr{position:sticky; bottom:0; z-index:3;}
-#wp-dept-summary-table thead th{padding:8px 9px; font-size:9.5px; line-height:1.25;}
-#wp-dept-summary-body td{padding:7px 9px; font-size:11.5px;}
-#wp-main-table{min-width:1810px;}
-#wp-main-table thead th{padding:8px 6px; font-size:9px; line-height:1.25; letter-spacing:.3px;}
-#wp-main-table tbody td{padding:6.5px 6px; font-size:11px; font-weight:400; line-height:1.3;}
-#wp-main-table td.wrap, #wp-main-table th.wrap{white-space:normal; max-width:118px;}
-/* Funding Source (18th column): give it noticeably less room than before */
-#wp-main-table th:nth-child(18), #wp-main-table td:nth-child(18){white-space:normal; max-width:78px; width:78px;}
-/* Department (1st column): wrap the name across two lines to use the
-narrower column width efficiently rather than forcing extra scroll */
-#wp-main-table th:nth-child(1), #wp-main-table td:nth-child(1){white-space:normal; max-width:104px; width:104px;}
-/* Budget Output Description (6th column): holds long narrative text, so
-give it noticeably more room than the other wrapped columns. Widened by
-half its original width (260px -> 390px) for extra room. */
-#wp-main-table th:nth-child(6), #wp-main-table td:nth-child(6){white-space:normal; max-width:390px; width:390px;}
-/* PIAP Output Description (7th) and PIAP Output Indicator (8th) columns —
-sit between Budget Output Code/Description and Unit of Measure — need
-noticeably more room than the other wrapped columns since they hold
-long narrative text. PIAP Output Description is widened by half its
-original width (220px -> 330px) for extra room. */
-#wp-main-table th:nth-child(7), #wp-main-table td:nth-child(7){white-space:normal; max-width:330px; width:330px;}
-#wp-main-table th:nth-child(8), #wp-main-table td:nth-child(8){white-space:normal; max-width:220px; width:220px;}
-/* Q1–Q4 and Total Budget columns: keep numbers compact */
-#wp-main-table th:nth-child(13), #wp-main-table td:nth-child(13),
-#wp-main-table th:nth-child(14), #wp-main-table td:nth-child(14),
-#wp-main-table th:nth-child(15), #wp-main-table td:nth-child(15),
-#wp-main-table th:nth-child(16), #wp-main-table td:nth-child(16),
-#wp-main-table th:nth-child(17), #wp-main-table td:nth-child(17){max-width:92px; width:92px;}
-.toolbar{display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap;}
-.search-box{position:relative; flex:1; min-width:220px;}
-.search-box svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); width:15px;height:15px; color:var(--ink-500); pointer-events:none;}
-.search-box input{width:100%; padding:9px 12px 9px 34px; border:1.5px solid var(--line); border-radius:var(--radius-sm); font-size:13px; transition:border-color .15s var(--ease), box-shadow .15s var(--ease); background:#fff;}
-.search-box input:focus{border-color:var(--teal-500); box-shadow:var(--shadow-ring);}
-select.filter-select{padding:9px 12px; border:1.5px solid var(--line); border-radius:var(--radius-sm); font-size:13px; background:#fff; transition:border-color .15s var(--ease);}
-select.filter-select:focus{border-color:var(--teal-500); box-shadow:var(--shadow-ring);}
-/* ---------------- Badges / pills ---------------- */
-.pill{display:inline-flex; align-items:center; gap:5px; padding:3.5px 10px; border-radius:20px; font-size:10.5px; font-weight:700; text-transform:capitalize; letter-spacing:.2px;}
-.pill::before{content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex-shrink:0; opacity:.85;}
-.pill-draft{background:#EEF1F1; color:var(--ink-700);}
-.pill-submitted{background:var(--info-bg); color:var(--info);}
-.pill-hod_approved, .pill-treasurer_approved{background:var(--warning-bg); color:var(--warning);}
-.pill-approved, .pill-accounted, .pill-verified{background:var(--success-bg); color:var(--success);}
-.pill-rejected, .pill-flagged{background:var(--danger-bg); color:var(--danger);}
-.pill-returned{background:#F1E9FB; color:#6A3FA0;}
-.pill-pending{background:var(--warning-bg); color:var(--warning);}
-/* ---------------- Modal ---------------- */
-.overlay{position:fixed; inset:0; background:rgba(10,20,26,.6); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; z-index:100; padding:20px;}
-.overlay.show{display:flex; animation:fadeIn .18s var(--ease);}
-.modal{background:#fff; border-radius:var(--radius-lg); width:100%; max-width:560px; max-height:88vh; overflow-y:auto; box-shadow:var(--shadow-lg); animation:scaleIn .25s var(--ease);}
-.modal-lg{max-width:760px;}
-.modal-head{display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid var(--line);}
-.modal-head h3{margin:0; font-family:var(--font-display); font-size:17.5px; font-weight:600;}
-.modal-close{background:none; border:none; cursor:pointer; color:var(--ink-500); font-size:20px; line-height:1; width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; transition:background .15s var(--ease), color .15s var(--ease);}
-.modal-close:hover{background:var(--danger-bg); color:var(--danger);}
-.modal-head-actions{display:flex; align-items:center; gap:4px; flex-shrink:0;}
-/* The New/Edit Requisition modal's title is centered in its header bar
-   (rather than left-aligned like other modals) — the maximize/close
-   buttons are taken out of flow so the title can center against the
-   full header width. */
-#modal-req .modal-head{position:relative; justify-content:center;}
-#modal-req .modal-head-actions{position:absolute; right:22px; top:50%; transform:translateY(-50%);}
-.modal-max-btn{background:none; border:none; cursor:pointer; color:var(--ink-500); font-size:15px; line-height:1; width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; transition:background .15s var(--ease), color .15s var(--ease);}
-.modal-max-btn:hover{background:var(--gold-100); color:var(--navy-950);}
-/* Maximized state — the modal expands to 60% of the viewport width (with
-   a slightly taller height so there's a bit more vertical room for the
-   requisition form) so wide tables (the requisition meta table /
-   line-item table) get the extra width instead of scrolling in a
-   cramped box, while still leaving a visible margin around it.
-   Minimizing (toggling the class off) simply restores the modal's
-   normal centred size. */
-.overlay.overlay-maximized{padding:0;}
-.modal.modal-maximized{
-width:60vw !important; max-width:60vw !important; height:68vh !important; max-height:68vh !important; margin:0 !important; border-radius:var(--radius-lg) !important;
-display:flex; flex-direction:column;
-overflow:hidden !important;
-}
-/* The Requisition modal specifically gets extra vertical room (taller,
-same width as other maximized modals) so more of the requisition form
-is visible without scrolling. This only affects the modal's own height,
-not the height of any requisition row/field inside it. */
-#modal-req .modal.modal-maximized,
-#modal-req-detail .modal.modal-maximized{height:100vh !important; max-height:100vh !important; margin:0 auto !important;}
-/* The outer .modal normally scrolls (see .modal above), which — when
-maximized — let the modal-head (and its minimize/close buttons) scroll
-out of view along with the body content. Locking the outer element and
-only letting modal-body scroll keeps the head, with its buttons, stuck
-in place at all times. */
-.modal.modal-maximized .modal-head{flex-shrink:0; position:sticky; top:0; z-index:2; background:#fff;}
-.modal.modal-maximized .modal-body{flex:1; overflow-y:auto;}
-.modal.modal-maximized .modal-foot{flex-shrink:0;}
-/* Inside a maximized modal, the requisition paper-form and its tables
-should use the full width now available instead of staying capped at
-their normal narrow max-width. */
-.modal.modal-maximized .req-form-paper,
-.modal.modal-maximized table.req-form-meta-table,
-.modal.modal-maximized table.req-form-table,
-.modal.modal-maximized .pv-form{
-max-width:100% !important; width:100% !important;
-}
-.modal-body{padding:20px 22px;}
-.modal-foot{padding:16px 22px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;}
-.form-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 14px;}
-.form-grid .span2{grid-column:1/-1;}
-/* ---------------- Toasts ---------------- */
-#toast-stack{position:fixed; bottom:20px; right:20px; z-index:200; display:flex; flex-direction:column; gap:10px;}
-.toast{
-background:var(--navy-950); color:#fff; padding:13px 16px; border-radius:10px; box-shadow:var(--shadow-lg);
-font-size:13px; min-width:260px; max-width:360px; display:flex; align-items:flex-start; gap:10px;
-animation:toast-in .35s var(--ease); backdrop-filter:blur(6px);
-}
-.toast.success{border-left:4px solid var(--success);}
-.toast.error{border-left:4px solid var(--danger);}
-.toast.info{border-left:4px solid var(--teal-500);}
-@keyframes toast-in{from{opacity:0; transform:translateY(12px) scale(.96);} to{opacity:1; transform:translateY(0) scale(1);}}
-.empty-state{padding:50px 20px; text-align:center; color:var(--ink-500);}
-.empty-state svg{width:38px;height:38px; color:var(--line-strong); margin-bottom:10px;}
-.loading-row{padding:40px; text-align:center; color:var(--ink-500); font-size:13px;}
-.spinner{
-width:16px;height:16px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%;
-display:inline-block; animation:spin .7s linear infinite;
-}
-.spinner-dark{border:2px solid var(--line-strong); border-top-color:var(--teal-600);}
-@keyframes spin{to{transform:rotate(360deg);}}
-.tabs-sub{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px;}
-.tabs-sub button{
-background:none; border:none; padding:9px 4px; margin-right:22px; font-size:13px; font-weight:600; color:var(--ink-500);
-cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
-}
-.tabs-sub button.active{color:var(--teal-700); border-color:var(--teal-600);}
-.detail-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px 22px; margin-bottom:16px;}
-.detail-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink-500); font-weight:700;}
-.detail-value{font-size:13.5px; margin-top:2px; font-weight:500;}
-.help-text{font-size:11.5px; color:var(--ink-500); margin-top:4px;}
-.divider{height:1px; background:var(--line); margin:16px 0;}
-.kicker{font-size:10.5px; text-transform:uppercase; letter-spacing:.7px; color:var(--gold-600); font-weight:700;}
-/* ---------------- Section groups inside forms ---------------- */
-.field-section{margin-top:4px;}
-.field-section .kicker{display:block; margin-bottom:2px;}
-/* ---------------- My Settings / Signature ---------------- */
-.sig-preview-box{
-width:180px; height:80px; border:1.5px dashed var(--line-strong); border-radius:var(--radius-sm);
-display:flex; align-items:center; justify-content:center; background:var(--paper); overflow:hidden; flex-shrink:0;
-}
-.sig-preview-box img{max-width:100%; max-height:100%; object-fit:contain;}
-/* ---------------- Printable Requisition Form (mirrors the Council's paper form) ---------------- */
-/* All fixed pixel sizing in this block (fonts, padding, margins, heights)
-   is scaled to 86% of its original 100% value — this is the on-screen
-   default requisition layout size. Percentage widths (table width:100%
-   etc.) are left alone since they're already relative to the paper's own
-   container, not an absolute size. */
-.req-form-paper{
-background:#fff; padding:8.6px 5.2px 5.2px; font-family:var(--font-body); color:#181818;
-}
-/* Requisition form header — a single pre-composed banner image (header.jpg)
-   replaces the old text+crest+seal composite so the on-screen form matches
-   the Council's printed letterhead exactly. */
-.rf-header-img{display:block; width:91%; height:auto; margin:0 auto 8.6px; border-radius:4px;}
-.req-form-header{text-align:center; margin-bottom:1.7px;}
-.req-form-header .rf-title{font-family:var(--font-display); font-size:19.5px; font-weight:800; letter-spacing:.34px; text-transform:uppercase; margin-top:6px;}
-.rf-refno{text-align:right; font-size:10.75px; margin:1.7px 0 8.6px; font-weight:600;}
-.rf-refno .mono{color:#b8382a; font-weight:800;}
-table.req-form-meta-table{width:100%; max-width:100%; table-layout:fixed; box-sizing:border-box; border-collapse:collapse; margin:6.9px 0 12.04px; font-size:10.75px; border:1px solid #333;}
-table.req-form-meta-table td{border:1px solid #333; padding:4.3px 6.9px; vertical-align:bottom; overflow-wrap:break-word; word-break:break-word;}
-table.req-form-meta-table td strong{margin-right:5.2px;}
-table.req-form-meta-table td .rf-fill{display:inline-block; min-height:13.76px; vertical-align:bottom;}
-table.req-form-meta-table td .rf-fill img{max-height:37.84px; max-width:154.8px; object-fit:contain; vertical-align:bottom;}
-.req-form-subject{font-size:10.75px; margin:0 0 12.04px; line-height:2;}
-.req-form-subject strong{white-space:nowrap; margin-right:3.44px;}
-.req-form-subject .rf-dots{border-bottom:1px dotted #666; display:inline-block;}
-table.req-form-table{width:100%; max-width:100%; table-layout:fixed; box-sizing:border-box; border-collapse:collapse; margin-bottom:12.04px; font-size:10.32px; border:1px solid #e2790f;}
-/* Requisition / Payment Voucher line-item table rules are orange per
-   Council request, so the printed and on-screen line grid stands out
-   from the rest of the black-ruled paper form. */
-table.req-form-table th, table.req-form-table td{border:1px solid #e2790f; padding:5.16px 6.9px; overflow-wrap:break-word; word-break:break-word;}
-table.req-form-table th{background:#fdf1e2; font-size:9.03px; text-transform:uppercase; text-align:left; color:#8a4a09;}
-table.req-form-table td.num, table.req-form-table th.num{text-align:right; font-family:var(--font-mono);}
-table.req-form-table tr.rf-section-head td{font-weight:700; background:#fffaf3;}
-table.req-form-table tr.rf-subtotal td{font-weight:700; border-top:2px double #e2790f;}
-table.req-form-table tr.rf-grand td{font-weight:700; border-top:2px double #e2790f; background:#fdf1e2; font-size:10.75px; text-transform:uppercase;}
-.req-form-words{font-size:10.75px; margin-bottom:25.8px; line-height:2;}
-.req-form-words strong{white-space:nowrap; margin-right:3.44px;}
-.req-form-words .rf-dots{border-bottom:1px dotted #666; display:inline-block;}
-.req-form-signatures{display:grid; grid-template-columns:repeat(3,1fr); border:1px solid #333; margin-top:15.48px;}
-.req-form-signatures > div{padding:11px 13px 13px; border-left:1px solid #333;}
-.req-form-signatures > div:first-child{border-left:none;}
-.req-form-signatures .sig-role{font-size:11.5px; font-weight:600; margin-bottom:24px;}
-.req-form-signatures .sig-line{border-bottom:1px dotted #666; margin-bottom:8px; height:44px; display:flex; align-items:flex-end; padding-bottom:1.72px;}
-/* Space between the dotted signature line and the role label — shows the
-   authorizer's name pulled from the system (auto-filled when they attach
-   their signature) while staying an editable field on the entry form. */
-.req-form-signatures .sig-name-fill{margin:0 0 6px;}
-.req-form-signatures .sig-name-fill input{width:100%; border:none; background:transparent; font:inherit; font-size:11px; font-weight:600; text-align:center; color:#181818; padding:2px 4px;}
-.req-form-signatures .sig-name-fill input::placeholder{font-weight:400; color:var(--ink-500);}
-.req-form-signatures .sig-name-fill input:focus{outline:1px dashed var(--gold-600); background:#fffdf2; border-radius:3px;}
-.req-form-signatures .sig-name{margin:0 0 6px; font-size:11px; font-weight:600; text-align:center; min-height:14px;}
-/* Unscoped so every signature box — including the Payment Voucher's Vote
-Book / Verified by / Passed Payment / payee / witness / cashier boxes,
-which sit in a plain table rather than inside .req-form-signatures — gets
-the same enlarged, clearly-visible signature image once one is attached. */
-.sig-line img{max-height:37.84px; max-width:95%; object-fit:contain;}
-.req-form-signatures .sig-label{font-size:11.5px; font-weight:800;}
-@media print{
-@page{ size:A4; margin:12mm; }
-body *{visibility:hidden;}
-#print-form-container, #print-form-container *{visibility:visible;}
-.overlay#modal-print-form{position:absolute; inset:auto; background:none; padding:0;}
-#print-form-container{position:absolute; top:0; left:0; width:100%; max-width:none; box-shadow:none; border:none; max-height:none;}
-.no-print{display:none !important;}
-/* The 86% on-screen sizing above is a screen-only default — restore the
-   original full-size dimensions for the physical printed page. */
-#print-form-container .req-form-paper{padding:10px 6px 6px;}
-#print-form-container .rf-header-img{width:91%; margin:0 auto 10px;}
-#print-form-container .req-form-header{margin-bottom:2px;}
-#print-form-container .req-form-header .rf-title{font-size:23px; letter-spacing:.45px; margin-top:7px;}
-#print-form-container .rf-refno{font-size:12.5px; margin:2px 0 10px;}
-#print-form-container table.req-form-meta-table{margin:8px 0 14px; font-size:12.5px;}
-#print-form-container table.req-form-meta-table td{padding:5px 8px;}
-#print-form-container table.req-form-meta-table td strong{margin-right:6px;}
-#print-form-container table.req-form-meta-table td .rf-fill{min-height:16px;}
-#print-form-container table.req-form-meta-table td .rf-fill img{max-height:44px; max-width:180px;}
-#print-form-container .req-form-subject{font-size:12.5px; margin:0 0 14px;}
-#print-form-container .req-form-subject strong{margin-right:4px;}
-#print-form-container table.req-form-table{margin-bottom:14px; font-size:12px;}
-#print-form-container table.req-form-table th, #print-form-container table.req-form-table td{padding:6px 8px;}
-#print-form-container table.req-form-table th{font-size:10.5px;}
-#print-form-container table.req-form-table tr.rf-grand td{font-size:12.5px;}
-#print-form-container .req-form-words{font-size:12.5px; margin-bottom:30px;}
-#print-form-container .req-form-words strong{margin-right:4px;}
-#print-form-container .req-form-signatures{margin-top:18px;}
-#print-form-container .req-form-signatures > div{padding:12px 14px 14px;}
-#print-form-container .req-form-signatures .sig-role{font-size:13px; margin-bottom:28px;}
-#print-form-container .req-form-signatures .sig-line{margin-bottom:9px; height:50px; padding-bottom:2px;}
-#print-form-container .sig-line img{max-height:44px;}
-#print-form-container .req-form-signatures .sig-name-fill, #print-form-container .req-form-signatures .sig-name{margin:0 0 8px; font-size:13px;}
-#print-form-container .req-form-signatures .sig-label{font-size:13px;}
-}
-/* ---------------- Requisition data-entry form (styled as the paper form itself) ---------------- */
-.req-digital-controls{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px 14px; margin-bottom:16px;}
-.req-digital-controls .form-grid{margin-top:8px;}
-table.req-form-meta-table.entry td{padding:5px 8px;}
-table.req-form-meta-table.entry .rf-field{display:flex; align-items:baseline; gap:4px;}
-table.req-form-meta-table.entry .rf-field strong{white-space:nowrap; font-size:12px;}
-table.req-form-meta-table.entry input, table.req-form-meta-table.entry select, table.req-form-meta-table.entry textarea{flex:1; min-width:0; border:none; background:transparent; font:inherit; font-size:12.5px; color:#181818; padding:2px 0;}
-table.req-form-meta-table.entry input[readonly]{color:#333;}
-table.req-form-meta-table.entry input:focus, table.req-form-meta-table.entry select:focus, table.req-form-meta-table.entry textarea:focus{outline:1px dashed var(--gold-600); background:#fffdf2; border-radius:3px;}
-/* Read-only, system-filled fields (System User Name, Email, Role, Date,
-Activity Budget Limit/Balance) don't need to stretch across the rest of
-the cell — they hug their own content so the value sits immediately
-after the colon instead of leaving a wide empty gap. */
-table.req-form-meta-table.entry .rf-field-tight{display:inline-flex; gap:4px; max-width:100%;}
-table.req-form-meta-table.entry .rf-field-tight .rf-fill{flex:none; font-size:12.5px; color:#333; overflow-wrap:break-word; word-break:break-word; min-height:auto;}
-table.req-form-meta-table.entry .rf-field-desc textarea{width:100%; resize:none; overflow:hidden; white-space:pre-wrap; word-wrap:break-word; overflow-wrap:break-word; line-height:1.35; min-height:20px; display:block;}
-.req-form-subject.entry{display:flex; align-items:baseline; gap:6px;}
-.req-form-subject.entry input{flex:1; border:none; border-bottom:1px dotted #888; background:transparent; font:inherit; font-size:12.5px; padding:2px 4px;}
-.req-form-subject.entry input:focus{outline:none; border-bottom:1px dotted var(--gold-600); background:#fffdf2;}
-table.req-form-table.entry td{padding:3px 4px;}
-table.req-form-table.entry input{width:100%; border:none; background:transparent; font:inherit; font-size:12px; padding:4px 4px; color:#181818;}
-table.req-form-table.entry input:focus{outline:1px dashed var(--gold-600); background:#fffdf2; border-radius:3px;}
-table.req-form-table.entry input[data-li-field="qty"], table.req-form-table.entry input[data-li-field="rate"], table.req-form-table.entry input[data-li-field="amount"]{text-align:right; font-family:var(--font-mono);}
-/* Description column is a textarea so long text wraps onto new lines and
-grows the row, instead of a single-line input that hides overflow text. */
-table.req-form-table.entry textarea[data-li-field="description"]{
-width:100%; border:none; background:transparent; font:inherit; font-size:12px; padding:4px 4px; color:#181818;
-resize:none; overflow:hidden; white-space:pre-wrap; word-wrap:break-word; line-height:1.35; display:block; min-height:20px;
-}
-table.req-form-table.entry textarea[data-li-field="description"]:focus{outline:1px dashed var(--gold-600); background:#fffdf2; border-radius:3px;}
-table.req-form-table.entry td.no-print{padding:3px 2px; text-align:center; vertical-align:middle;}
-table.req-form-table.entry .rf-row-remove, table.req-form-table.entry .rf-row-add{background:none; border:1px solid var(--line); border-radius:4px; color:var(--ink-500); cursor:pointer; font-size:11px; line-height:1; padding:3px 4px; margin:1px;}
-table.req-form-table.entry .rf-row-remove:hover{color:#fff; background:var(--danger, #b8382a); border-color:var(--danger, #b8382a);}
-table.req-form-table.entry .rf-row-add:hover{color:#fff; background:var(--teal-600); border-color:var(--teal-600);}
-/* Ledger tables (meta table, line-item table) always close every row and
-   column with a visible rule, including empty trailing cells such as the
-   remove-line column and grand-total spacer cells. */
-table.req-form-meta-table td:last-child{border-right:1px solid #333;}
-table.req-form-meta-table tr:last-child td{border-bottom:1px solid #333;}
-table.req-form-table th:last-child, table.req-form-table td:last-child{border-right:1px solid #e2790f;}
-table.req-form-table tr:last-child td, table.req-form-table tfoot tr:last-child td{border-bottom:1px solid #e2790f;}
-table.req-form-table.entry tr.rf-grand td{font-family:var(--font-mono);}
-/* Budget Output Code search field (replaces the old <select> dropdown) */
-.rf-bc-search-wrap{position:relative; flex:1; min-width:0;}
-.rf-bc-search-wrap input{width:100%;}
-.rf-bc-results{
-display:none; position:absolute; z-index:40; top:100%; left:0; right:0; margin-top:2px;
-background:#fff; border:1px solid var(--line); border-radius:6px; box-shadow:0 8px 20px rgba(10,20,26,.14);
-max-height:220px; overflow-y:auto; text-align:left;
-}
-.rf-bc-results.open{display:block;}
-.rf-bc-results .rf-bc-opt{padding:7px 10px; font-size:12px; cursor:pointer; border-bottom:1px solid var(--line);}
-.rf-bc-results .rf-bc-opt:last-child{border-bottom:none;}
-.rf-bc-results .rf-bc-opt:hover, .rf-bc-results .rf-bc-opt.active{background:#fdf1e2;}
-.rf-bc-results .rf-bc-opt .rf-bc-code{font-weight:700; font-family:var(--font-mono); margin-right:6px;}
-.rf-bc-results .rf-bc-empty{padding:8px 10px; font-size:12px; color:var(--ink-500);}
-.req-form-words.entry{font-size:12.5px; margin-bottom:18px;}
-.req-form-signatures.preview .sig-line{border-bottom:1px dotted #ccc;}
-.req-form-signatures.preview{opacity:.7;}
-/* ---------------- Attach-signature buttons + Cheque Payment Voucher (entry form) ---------------- */
-.sig-attach-btn{display:inline-flex; align-items:center; gap:4px; font-size:10.5px; padding:3px 8px; margin-top:4px; border:1px dashed var(--gold-600, #b8860b); background:#fffdf2; color:#7a5b00; border-radius:5px; cursor:pointer;}
-.sig-attach-btn:hover{background:#fff4d6;}
-.rf-sig-slot{display:flex; flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px;}
-.rf-sig-slot .rf-fill{flex:1 1 auto; min-width:60px;}
-.rf-sig-slot .sig-attach-btn{flex-basis:100%;}
-.pv-form{margin-top:26px; padding-top:18px; border-top:2px dashed var(--line);}
-.pv-form .rf-title{margin-top:2px;}
-.pv-certify{font-size:11.5px; line-height:1.7; border:1px solid #333; padding:10px 12px; margin:10px 0 14px;}
-.pv-certify p{margin:0 0 8px;}
-.pv-certify p:last-child{margin-bottom:0;}
-/* Authority / Total / Approved Vote / Account No / Approved Estimate / Cheque
-   Instruction No — on the paper form these are plain fill-in-the-blank lines
-   inside the same bordered box as the certify paragraphs below, not a boxed
-   mini-table, so they're styled to match that (dotted fill, no cell borders). */
-.pv-plain-line{display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; font-size:12.5px; margin-bottom:8px;}
-.pv-plain-line strong{white-space:nowrap; font-weight:700;}
-.pv-plain-line .rf-dots{flex:1; min-width:80px;}
-.pv-plain-line.entry input{flex:1; min-width:80px; border:none; border-bottom:1px dotted #888; background:transparent; font:inherit; font-size:12.5px; padding:2px 4px;}
-.pv-plain-line.entry input:focus{outline:none; border-bottom:1px dotted var(--gold-600); background:#fffdf2;}
-table.pv-block-table{width:100%; border-collapse:collapse; font-size:12px; margin-bottom:14px;}
-table.pv-block-table td{border:1px solid #333; padding:6px 8px; vertical-align:top;}
-table.pv-block-table td strong{display:block; font-size:11px; margin-bottom:4px;}
-table.pv-block-table input{width:100%; border:none; background:transparent; font:inherit; font-size:12.5px; color:#181818; padding:2px 2px;}
-table.pv-block-table input:focus{outline:1px dashed var(--gold-600); background:#fffdf2; border-radius:3px;}
-.pv-received-line{font-size:12.5px; line-height:2; margin-bottom:14px;}
-.pv-received-line input{border:none; border-bottom:1px dotted #888; background:transparent; font:inherit; font-size:12.5px; padding:2px 4px; text-align:center;}
-.pv-received-line input:focus{outline:none; border-bottom:1px dotted var(--gold-600); background:#fffdf2;}
-.pv-received-line input.pv-day{width:44px;}
-.pv-received-line input.pv-words{width:60%; min-width:180px; text-align:left;}
-/* ---------------- Hamburger / responsive sidebar ---------------- */
-.hamburger-btn{display:none;}
-.sidebar-backdrop{display:none;}
-@media (max-width: 900px){
-.hamburger-btn{display:flex;}
-.sidebar{
-position:fixed; top:0; left:0; bottom:0; z-index:150; width:250px;
-transform:translateX(-100%); transition:transform .25s var(--ease);
-}
-.sidebar.open{transform:translateX(0); box-shadow:var(--shadow-lg);}
-.sidebar-backdrop{
-display:none; position:fixed; inset:0; background:rgba(10,20,26,.55); z-index:140;
-}
-.sidebar-backdrop.show{display:block; animation:fadeIn .2s var(--ease);}
-.stat-grid{grid-template-columns:repeat(2,1fr);}
-.form-grid{grid-template-columns:1fr;}
-.detail-grid{grid-template-columns:1fr;}
-.content{padding:18px 16px 50px;}
-}
-@media (max-width:560px){
-.stat-grid{grid-template-columns:1fr;}
-.topbar{padding:0 14px;}
-.topbar-title-lg{font-size:18px; line-height:1.3;}
-.content{padding:14px 12px 50px;}
-.toolbar{flex-direction:column; align-items:stretch;}
-.req-form-meta{grid-template-columns:1fr;}
-.req-form-signatures{grid-template-columns:1fr;}
-}
-#wp-dept-summary-wrap tfoot td {
-text-align: left !important;
-}
-/* Align all table headers in the green div to the left */
-#wp-revenue-summary-wrap thead th,
-#wp-dept-summary-wrap thead th,
-#wp-revenue-detail-wrap thead th {
-  text-align: left !important;
-}
-/* ---------------- Clear-all header icon buttons ---------------- */
-.th-clear-btn{
-background:none; border:none; cursor:pointer; padding:4px; border-radius:5px;
-display:inline-flex; align-items:center; justify-content:center;
-color:inherit; opacity:.85; transition:background .15s var(--ease), color .15s var(--ease), opacity .15s var(--ease);
-vertical-align:middle; flex-shrink:0;
-}
-.topbar.topbar-workplan .topbar-title-wrap{display:flex !important;}
-.th-clear-btn:hover{background:rgba(184,56,42,.9); color:#fff; opacity:1;}
-.th-clear-btn svg{width:14px;height:14px; display:block; pointer-events:none;}
-.th-with-clear{display:flex; align-items:center; justify-content:space-between; gap:6px; white-space:nowrap;}
-</style>
-</head>
-<body>
-<!-- ===================== LOGIN ===================== -->
-<div id="login-screen">
-<div class="login-card">
-<div class="login-band">
-<div class="brand-row">
-<div class="crest"><img src="logoo.jpeg" alt="Karugutu Town Council Crest" /></div>
-<div>
-<h1>Karugutu Town Council</h1>
-<p>Integrated Public Financial Management System</p>
-</div>
-</div>
-</div>
-<div class="login-body">
-<div class="login-error" id="login-error"></div>
-<form id="login-form" autocomplete="off">
-<div class="field">
-<label>Signing in as</label>
-<select id="login-role" required>
-<option value="">— Select your role —</option>
-<option value="staff">Staff Member</option>
-<option value="hod">Head of Department</option>
-<option value="treasurer">Senior Treasurer</option>
-<option value="clerk">Town Clerk</option>
-<option value="auditor">Internal Auditor</option>
-<option value="admin">System Administrator</option>
-</select>
-</div>
-<div class="field">
-<label>Email address</label>
-<input type="email" id="login-email" required autocomplete="off" placeholder="you@karugutu.town.go.ug" />
-</div>
-<div class="field">
-<label>Password</label>
-<div class="password-field-wrap">
-<input type="password" id="login-password" required autocomplete="new-password" placeholder="••••••••" />
-<button type="button" class="password-toggle-btn" id="login-password-toggle" aria-label="Show password" title="Show password">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-</button>
-</div>
-</div>
-<button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in to your account</button>
-</form>
-<p class="login-hint">Access is restricted to authorised Council personnel. Contact your System Administrator for account issues.</p>
-</div>
-</div>
-</div>
-<!-- ===================== APP ===================== -->
-<div id="app-screen">
-<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
-<div class="shell">
-<aside class="sidebar">
-<div class="brand">
-<div class="crest"><img src="logoo.jpeg" alt="Karugutu Town Council Crest" /></div>
-<div class="brand-name">Karugutu Town Council
-<small>KTC-IPFMS</small>
-</div>
-</div>
-<div class="nav-group">
-<button class="nav-item active" data-view="dashboard">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-Dashboard
-</button>
-<button class="nav-item" data-view="workplan">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 5v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5M9 9h6M9 13h6M9 17h3"/></svg>
-Work Plan &amp; Budget
-</button>
-<button class="nav-item" data-view="requisitions" style="font-size:12px; line-height:1.25;">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6l1 3H8l1-3z"/><path d="M6 6h12v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6z"/><path d="M9 11h6M9 15h4"/></svg>
-Requisition Voucher, Payment Voucher and Accountability documents
-</button>
-<button class="nav-item" data-view="approvals">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-Approvals
-</button>
-<button class="nav-item" data-view="accountability">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5V6a2 2 0 0 1 2-2h9l5 5v10.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 4v5h5"/></svg>
-Accountability
-</button>
-<button class="nav-item" data-view="reports">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5a1 1 0 0 1 1-1h9l6 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9 12h6M9 16h4"/></svg>
-Audit &amp; Reports
-</button>
-</div>
-<div class="nav-group" id="admin-nav-group" style="display:none;">
-<div class="nav-label">Administration</div>
-<button class="nav-item" data-view="users">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="8.5" r="2.3"/><path d="M15.5 14a5.5 5.5 0 0 1 5 6"/></svg>
-Users &amp; Roles
-</button>
-<button class="nav-item" data-view="departments">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6M3 21h18"/></svg>
-Departments
-</button>
-</div>
-<div class="sidebar-footer">
-<button class="user-chip" id="user-chip-btn" title="My Settings &amp; Signature">
-<div class="avatar" id="sb-avatar">A</div>
-<div style="min-width:0;">
-<div class="u-name" id="sb-name">—</div>
-<div class="u-role" id="sb-role">—</div>
-</div>
-</button>
-<span class="logout-link" id="logout-btn">Sign out</span>
-</div>
-</aside>
-<main class="main">
-<div class="topbar">
-<button class="icon-btn hamburger-btn" id="hamburger-btn" title="Menu">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-</button>
-<div class="topbar-title-wrap" id="topbar-title-wrap">
-<div class="topbar-title" id="topbar-title">Dashboard</div>
-<div class="topbar-sub" id="topbar-sub">Overview of financial activity</div>
-</div>
-<div class="topbar-right">
-<span id="wp-fy-title" style="display:none;">—</span>
-<button class="icon-btn" id="notif-btn" title="Notifications">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 8a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/></svg>
-<span class="badge-dot" id="notif-badge" style="display:none;">0</span>
-</button>
-</div>
-</div>
-<div class="notif-panel" id="notif-panel">
-<div class="notif-panel-head">
-<h4>Notifications</h4>
-<span id="mark-all-read">Mark all read</span>
-</div>
-<div id="notif-list"></div>
-</div>
-<div class="content">
-<!-- ===== DASHBOARD ===== -->
-<div class="view active" id="view-dashboard">
-<div class="section-head">
-<div>
-<h2>Financial Overview</h2>
-<div class="sub" id="dash-fy-label">Current position across all requisitions</div>
-</div>
-</div>
-<div class="stat-grid">
-<div class="stat-card">
-<div class="stat-label">Pending Approvals</div>
-<div class="stat-value" id="stat-pending">—</div>
-<div class="stat-foot">Awaiting action in the workflow</div>
-</div>
-<div class="stat-card gold">
-<div class="stat-label">Approved Requisitions</div>
-<div class="stat-value" id="stat-approved">—</div>
-<div class="stat-foot">Fully cleared to accountability</div>
-</div>
-<div class="stat-card danger">
-<div class="stat-label">Rejected Requisitions</div>
-<div class="stat-value" id="stat-rejected">—</div>
-<div class="stat-foot">Closed without disbursement</div>
-</div>
-<div class="stat-card navy">
-<div class="stat-label">Total Budget (UGX)</div>
-<div class="stat-value" id="stat-budget" style="font-size:22px;">—</div>
-<div class="stat-foot">Across all active budget codes</div>
-</div>
-</div>
-<div class="dash-grid">
-<div class="card card-pad">
-<div class="kicker">Recent Activity</div>
-<ul class="timeline" id="recent-activity-list" style="margin-top:8px;">
-<li class="loading-row"><span class="spinner spinner-dark"></span></li>
-</ul>
-</div>
-<div class="card card-pad">
-<div class="kicker">Budget Utilisation</div>
-<div style="font-family:var(--font-mono); font-size:24px; font-weight:600; margin-top:8px;" id="util-pct">—</div>
-<div class="util-bar-track"><div class="util-bar-fill" id="util-bar" style="width:0%;"></div></div>
-<div class="help-text" id="util-detail">Loading budget position…</div>
-<div class="divider"></div>
-<div class="kicker">Quick Actions</div>
-<div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
-<button class="btn btn-primary btn-block" id="qa-new-req">New Requisition</button>
-<button class="btn btn-ghost btn-block" data-view-link="approvals">Review Approval Queue</button>
-</div>
-</div>
-</div>
-<div class="card card-pad" style="margin-top:18px;">
-<div class="kicker">Budget by Department</div>
-<div class="help-text" style="margin-top:2px;">Total allocated budget (UGX) across all work plans, by department</div>
-<div id="dept-chart" style="margin-top:16px;">
-<div class="loading-row"><span class="spinner spinner-dark"></span></div>
-</div>
-</div>
-</div>
-<!-- ===== WORK PLAN & BUDGET (styled per reference) ===== -->
-<div class="view" id="view-workplan">
-<div class="card" style="background:#fff; border:none; padding:16px 20px; margin:0; display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap; box-shadow:none; width:100%; box-sizing:border-box;">
-<select class="filter-select" id="wp-select" style="flex:1 1 auto; width:100%; min-width:260px; max-width:none; text-align:center; text-align-last:center; font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--navy-950); padding:12px 14px; border-radius:var(--radius-sm);"></select>
-<div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-<button class="icon-btn" id="wp-new-workplan-btn" title="Add Annual Work Plan &amp; Budget Estimates" style="display:none;">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
-</button>
-<button class="icon-btn" id="wp-edit-workplan-btn" title="Edit Annual Work Plan &amp; Budget Estimates" style="display:none;">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-</button>
-<!-- Downloads the full Annual Work Plan & Budget PDF (all sections + revenue/workplan tables) -->
-<button class="icon-btn" id="wp-download-pdf-btn" title="Download Annual Work Plan &amp; Budget as PDF">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-</button>
-</div>
-</div>
-<input type="file" id="wp-import-revenue-file" accept=".xlsx,.xls" style="display:none;" />
-<input type="file" id="wp-import-file" accept=".xlsx,.xls" style="display:none;" />
-<div style="background:linear-gradient(120deg, var(--teal-700), var(--teal-500)); border-radius:14px; padding:20px 24px; color:#fff; margin-bottom:20px; box-shadow:var(--shadow-md);">
-<div class="card" style="background:rgba(255,255,255,.97); border:none; overflow:hidden;">
-<div style="padding:14px 18px 4px;">
-<div class="kicker" id="wp-title-revenue-summary" style="font-size:13px; color:var(--navy-950);">APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027</div>
-</div>
-<div class="table-wrap" id="wp-revenue-summary-wrap" style="border:none; box-shadow:none; margin:10px 16px 16px;">
-<table id="wp-revenue-summary-table">
-<thead>
-<tr>
-<th>Revenue Source</th>
-<th>Revenue Source Definition</th>
-<th>Revenue Source Amount (UGX)</th>
-</tr>
-</thead>
-<tbody id="wp-revenue-summary-body">
-<tr><td colspan="3" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>
-</tbody>
-<tfoot>
-<tr style="font-weight:700; background:#EAF0EF; text-align:left;">
-<td colspan="2">Total Revenue</td>
-<td class="num mono" id="wp-revenue-summary-total">—</td>
-</tr>
-</tfoot>
-</table>
-</div>
-</div>
-<div class="card" style="background:rgba(255,255,255,.97); border:none; overflow:hidden; margin-top:16px;">
-<div style="padding:14px 18px 4px;">
-<div class="kicker" id="wp-title-dept-summary" style="font-size:13px; color:var(--navy-950);">APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027</div>
-</div>
-<div class="table-wrap" id="wp-dept-summary-wrap" style="border:none; box-shadow:none; margin:10px 16px 16px;">
-<table id="wp-dept-summary-table">
-<thead>
-<tr>
-<th>Department</th>
-<th>Q1<br>(UGX)</th>
-<th>Q2<br>(UGX)</th>
-<th>Q3<br>(UGX)</th>
-<th>Q4<br>(UGX)</th>
-<th>Total Budget<br>(UGX)</th>
-<th>Uncommitted Departmental<br>Balance (UGX)</th>
-</tr>
-</thead>
-<tbody id="wp-dept-summary-body">
-<tr><td colspan="7" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>
-</tbody>
-<tfoot>
-<tr style="font-weight:700; background:#EAF0EF; text-align:left;">
-<td colspan="1">Sub Total</td>
-<td class="num mono" id="wp-summary-q1">—</td>
-<td class="num mono" id="wp-summary-q2">—</td>
-<td class="num mono" id="wp-summary-q3">—</td>
-<td class="num mono" id="wp-summary-q4">—</td>
-<td class="num mono" id="wp-summary-total">—</td>
-<td class="num mono" id="wp-summary-uncommitted">—</td>
-</tr>
-</tfoot>
-</table>
-</div>
-</div>
-</div>
-<div class="card" style="background:rgba(255,255,255,.97); border:none; overflow:hidden; margin-top:16px;">
-<div style="padding:14px 18px 4px;">
-<div class="table-title-row">
-<div class="kicker" id="wp-title-revenue-detail" style="font-size:13px; color:var(--navy-950);">APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027</div>
-<div class="table-title-actions">
-<button type="button" class="icon-btn icon-btn-sm" id="wp-new-revenue-btn" style="display:none;" title="Add Revenue Sources">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
-</button>
-<button type="button" class="icon-btn icon-btn-sm" id="wp-import-revenue-btn" style="display:none;" title="Import Revenue Sources From Excel">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
-</button>
-</div>
-</div>
-</div>
-<div class="table-wrap" id="wp-revenue-detail-wrap" style="border:none; box-shadow:none; margin:10px 16px 16px;">
-<table id="wp-revenue-detail-table">
-<thead>
-<tr>
-<th>PBS Fund Code</th>
-<th>Revenue Source</th>
-<th>Revenue Item (Functional Definition)</th>
-<th>Approved Budget Estimates<br> by Revenue Source (UGX)</th>
-<th>Approved Budget Estimate<br> by Revenue Source Category
-(UGX)</th>
-<th>
-<span class="th-with-clear">
-<span></span>
-<button type="button" class="th-clear-btn" id="wp-revenue-clear-btn" style="display:none;" title="Clear all revenue sources — deletes every revenue source and sub row in this table for the selected work plan">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-</button>
-</span>
-</th>
-</tr>
-</thead>
-<tbody id="wp-revenue-detail-body">
-<tr><td colspan="6" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>
-</tbody>
-</table>
-</div>
-</div>
-<br>
-<div class="toolbar">
-<div class="search-box">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-<input type="text" id="wp-search" placeholder="Search budget outputs, codes…" />
-</div>
-<select class="filter-select" id="wp-dept-filter"><option value="">All Departments</option></select>
-</div>
-<div class="table-title-row" id="wp-main-table-heading" style="margin-bottom:10px;">
-<div class="kicker" id="wp-title-main-table" style="font-size:13px; color:var(--navy-950);">APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027</div>
-<div class="table-title-actions">
-<button type="button" class="icon-btn icon-btn-sm" id="wp-new-btn" style="display:none;" title="Add Activity Output & Expenditure Estimates">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
-</button>
-<button type="button" class="icon-btn icon-btn-sm" id="wp-import-btn" style="display:none;" title="Import Activity & Budget Estimates From Excel">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
-</button>
-</div>
-</div>
-<div class="table-wrap" id="wp-main-table-wrap">
-<table id="wp-main-table">
-<thead>
-<tr>
-<th class="wrap">Department</th>
-<th class="wrap">Service<br>Area</th>
-<th class="wrap">Programme</th>
-<th class="wrap">Sub<br>Programme</th>
-<th class="wrap">Budget Output<br>Code</th>
-<th class="wrap">Budget Output<br>Description</th>
-<th class="wrap">PIAP Output<br>Description</th>
-<th class="wrap">PIAP Output<br>Indicator</th>
-<th class="wrap">Unit of<br>Measure</th>
-<th class="wrap">Baseline<br>Value</th>
-<th class="wrap">Planned<br>Target</th>
-<th class="wrap">Actual<br>Output</th>
-<th class="wrap">Q1<br>(UGX)</th>
-<th class="wrap">Q2<br>(UGX)</th>
-<th class="wrap">Q3<br>(UGX)</th>
-<th class="wrap">Q4<br>(UGX)</th>
-<th class="wrap">Total Budget<br>(UGX)</th>
-<th class="wrap">Funding<br>Source</th>
-<th class="wrap">Responsible<br>Party</th>
-<th>
-<span class="th-with-clear">
-<span></span>
-<button type="button" class="th-clear-btn" id="wp-clear-btn" style="display:none;" title="Clear all activity &amp; budget estimate rows — deletes every row in this table for the selected work plan">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-</button>
-</span>
-</th>
-</tr>
-</thead>
-<tbody id="wp-table-body">
-<tr><td colspan="20" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>
-</tbody>
-</table>
-</div>
-<div class="card card-pad" style="margin-top:18px;">
-<div class="kicker">📊 Baseline vs. Planned Target vs. Actual Output — by Department</div>
-<div class="help-text" style="margin-top:2px;">Maps previous performance (Baseline Value) against the Planned Target and the Actual Output Delivered for each department, to pinpoint achievement and variance margins clearly (reflects the department filter and search currently applied above).</div>
-<div id="wp-output-chart" style="margin-top:16px; overflow-x:auto;">
-<div class="loading-row"><span class="spinner spinner-dark"></span></div>
-</div>
-</div>
-<div class="card card-pad" style="margin-top:18px;">
-<div class="kicker">🥧 Budget Share by Department</div>
-<div class="help-text" style="margin-top:2px;">Proportion of total allocated budget contributed by each department (reflects the department filter and search currently applied above)</div>
-<div id="wp-pie-chart" style="margin-top:16px; display:flex; gap:28px; flex-wrap:wrap; align-items:center;">
-<div class="loading-row"><span class="spinner spinner-dark"></span></div>
-</div>
-</div>
-</div>
-<!-- ===== REQUISITIONS ===== -->
-<div class="view" id="view-requisitions">
-<div class="section-head">
-<div>
-<h2>Financial Requisitions</h2>
-<div class="sub">Create, track and submit requisitions against approved budget codes</div>
-</div>
-<button class="btn btn-primary" id="new-req-btn">Add New Requisition</button>
-</div>
-<div class="toolbar">
-<div class="search-box">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-<input type="text" id="req-search" placeholder="Search by reference number or subject…" />
-</div>
-<select class="filter-select" id="req-status-filter">
-<option value="">All Statuses</option>
-<option value="draft">Draft</option>
-<option value="submitted">Submitted</option>
-<option value="hod_approved">HOD Approved</option>
-<option value="treasurer_approved">Treasurer Approved</option>
-<option value="approved">Fully Approved</option>
-<option value="rejected">Rejected</option>
-<option value="returned">Returned</option>
-<option value="accounted">Accounted</option>
-</select>
-</div>
-<div class="table-wrap">
-<table id="req-list-table">
-<thead>
-<tr><th>Ref No.</th><th>Requester</th><th>Department</th><th class="wrap">Subject</th><th>Amount (UGX)</th><th>Status</th><th>Stage</th><th>Date</th><th></th></tr>
-</thead>
-<tbody id="req-table-body"><tr><td colspan="9" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-<!-- ===== APPROVALS ===== -->
-<div class="view" id="view-approvals">
-<div class="section-head">
-<div>
-<h2>Approval Queue</h2>
-<div class="sub">Items awaiting your decision at your stage of the workflow</div>
-</div>
-</div>
-<div class="table-wrap">
-<table id="approval-queue-table">
-<thead>
-<tr><th>Ref No.</th><th>Requester</th><th>Department</th><th class="wrap">Subject</th><th>Amount (UGX)</th><th>Available Balance</th><th>Stage</th><th></th></tr>
-</thead>
-<tbody id="approval-table-body"><tr><td colspan="8" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-<!-- ===== ACCOUNTABILITY ===== -->
-<div class="view" id="view-accountability">
-<div class="section-head">
-<div>
-<h2>Accountability</h2>
-<div class="sub">Verify supporting documentation for fully approved requisitions</div>
-</div>
-</div>
-<div class="table-wrap">
-<table>
-<thead>
-<tr><th>Ref No.</th><th>Department</th><th>Amount (UGX)</th><th>Documents</th><th>Status</th><th></th></tr>
-</thead>
-<tbody id="acc-table-body"><tr><td colspan="6" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-<!-- ===== REPORTS / AUDIT ===== -->
-<div class="view" id="view-reports">
-<div class="section-head">
-<div>
-<h2>Audit &amp; Reports</h2>
-<div class="sub">System-wide activity log and single-page audit views</div>
-</div>
-</div>
-<div class="tabs-sub">
-<button class="active" data-subtab="audit-log">System Audit Log</button>
-<button data-subtab="audit-view">Requisition Audit View</button>
-</div>
-<div id="subtab-audit-log">
-<div class="table-wrap">
-<table>
-<thead><tr><th>Timestamp</th><th>User ID</th><th>Action</th><th class="wrap">Details</th></tr></thead>
-<tbody id="audit-log-body"><tr><td colspan="4" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-<div id="subtab-audit-view" style="display:none;">
-<div class="card card-pad" style="max-width:420px; margin-bottom:18px;">
-<label style="font-size:12px; font-weight:600; color:var(--ink-700); display:block; margin-bottom:6px;">Enter Requisition Reference or ID</label>
-<div style="display:flex; gap:8px;">
-<input type="text" id="audit-view-search" placeholder="e.g. 12" style="flex:1; padding:9px 12px; border:1.5px solid var(--line); border-radius:var(--radius-sm);" />
-<button class="btn btn-primary" id="audit-view-btn">View</button>
-</div>
-</div>
-<div id="audit-view-result"></div>
-</div>
-</div>
-<!-- ===== USERS ===== -->
-<div class="view" id="view-users">
-<div class="section-head">
-<div>
-<h2>Users &amp; Roles</h2>
-<div class="sub">Manage Council staff accounts and role-based access</div>
-</div>
-<button class="btn btn-primary" id="new-user-btn">+ New User</button>
-</div>
-<div class="table-wrap">
-<table id="users-table">
-<thead><tr><th>Name</th><th>Email</th><th>Position</th><th>Telephone</th><th>Password</th><th>Role</th><th>Department</th><th>Status</th><th></th><th></th></tr></thead>
-<tbody id="users-table-body"><tr><td colspan="10" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-<!-- ===== DEPARTMENTS ===== -->
-<div class="view" id="view-departments">
-<div class="section-head">
-<div>
-<h2>Departments</h2>
-<div class="sub">Organisational units used across work plans and requisitions</div>
-</div>
-<button class="btn btn-primary" id="new-dept-btn">+ New Department</button>
-</div>
-<div class="table-wrap">
-<table>
-<thead><tr><th>Code</th><th>Name</th><th>Abbreviation</th><th></th></tr></thead>
-<tbody id="depts-table-body"><tr><td colspan="4" class="loading-row"><span class="spinner spinner-dark"></span></td></tr></tbody>
-</table>
-</div>
-</div>
-</div>
-</main>
-</div>
-</div>
-<div id="toast-stack"></div>
-<!-- ===== MODAL: New / Submit Requisition (styled as the Council's paper Funds Requisition Form) ===== -->
-<div class="overlay" id="modal-req">
-<div class="modal modal-lg" style="max-width:800px;">
-<div class="modal-head"><h3 id="req-modal-title">New Requisition</h3><div class="modal-head-actions"><button type="button" class="modal-max-btn" id="modal-req-max-btn" onclick="toggleModalMaximize('modal-req')" title="Maximize">⛶</button><button class="modal-close" data-close="modal-req">&times;</button></div></div>
-<div class="modal-body">
-<!-- Paper-form replica: fill this in exactly as you would the printed Funds Requisition Form -->
-<div class="req-form-paper" id="req-form-entry" style="border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px 16px 18px;">
-<img src="header.jpg" alt="Ntoroko District Local Government — Karugutu Town Council" class="rf-header-img"/>
-<div class="req-form-header"><div class="rf-title">Funds Requisition Form</div></div>
-<div class="rf-refno">Ref No. <span class="mono" id="req-form-refno-preview">(assigned on save)</span></div>
-<table class="req-form-meta-table entry">
-<tr>
-<td style="width:36%;"><div class="rf-field rf-field-tight"><strong>System User Name:</strong><span class="rf-fill" id="req-form-sysuser"></span></div></td>
-<td style="width:32%;"><div class="rf-field rf-field-tight"><strong>Email:</strong><span class="rf-fill" id="req-form-sysemail"></span></div></td>
-<td style="width:32%;"><div class="rf-field rf-field-tight"><strong>Role:</strong><span class="rf-fill" id="req-form-sysrole"></span></div></td>
-</tr>
-<tr>
-<td style="width:33.33%;"><div class="rf-field"><strong>Financial Year:</strong><select id="req-form-fy">
-<option value="2026/27">2026/27</option>
-<option value="2027/28">2027/28</option>
-<option value="2028/29">2028/29</option>
-<option value="2029/30">2029/30</option>
-</select></div></td>
-<td style="width:33.33%;"><div class="rf-field"><strong>Quarter:</strong><select id="req-form-quarter">
-<option value="Q1">Q1</option>
-<option value="Q2">Q2</option>
-<option value="Q3">Q3</option>
-<option value="Q4">Q4</option>
-</select></div></td>
-<td style="width:33.34%;"><div class="rf-field rf-field-tight"><strong>Date:</strong><span class="rf-fill" id="req-form-date"></span></div></td>
-</tr>
-<tr>
-<td colspan="3" style="width:100%;"><div class="rf-field"><strong>Department:</strong><select id="req-form-department"></select></div></td>
-</tr>
-<tr>
-<td style="width:33.33%;"><div class="rf-field"><strong>Requisitioner:</strong><input type="text" id="req-form-names" placeholder="Enter your full name"/></div></td>
-<td style="width:33.33%;"><div class="rf-field"><strong>Mob. No.:</strong><input type="text" id="req-form-mobile" placeholder="e.g. 0772 123456"/></div></td>
-<td style="width:33.34%;"><div class="rf-field"><strong>Position:</strong><input type="text" id="req-form-position" placeholder="e.g. Senior Accountant"/></div></td>
-</tr>
-<tr>
-<td colspan="3">
-<div class="rf-field rf-sig-slot">
-<strong>Requisitioner Signature:</strong>
-<div class="rf-fill" id="req-sig-requester"></div>
-<button type="button" class="sig-attach-btn no-print" id="req-sig-requester-btn" onclick="attachSignature('req-sig-requester', this)">🖊 Attach My Signature</button>
-</div>
-</td>
-</tr>
-<tr>
-<td style="width:33.33%;"><div class="rf-field"><strong>Budget Output Code:</strong>
-<div class="rf-bc-search-wrap">
-<input type="text" id="req-form-budgetcode-search" autocomplete="off" placeholder="Type the budget output code…"/>
-<input type="hidden" id="req-form-budgetcode"/>
-<div class="rf-bc-results" id="req-form-budgetcode-results"></div>
-</div>
-</div></td>
-<td style="width:33.33%;"><div class="rf-field rf-field-tight"><strong>Activity Budget Limit:</strong><span class="rf-fill" id="req-form-budgetlimit">—</span></div></td>
-<td style="width:33.34%;"><div class="rf-field rf-field-tight"><strong>Activity Budget Balance:</strong><span class="rf-fill" id="req-form-budgetbalance">—</span></div></td>
-</tr>
-<tr>
-<td colspan="3"><div class="rf-field rf-field-desc"><strong>Budget Output Description:</strong><textarea id="req-form-budgetdesc" readonly rows="1" placeholder="—"></textarea></div></td>
-</tr>
-<tr>
-<td colspan="3"><div class="rf-field"><strong>Activity Description(Subject):</strong><input type="text" id="req-subject" placeholder="e.g. Monitoring roads for 3rd Qtr works"/></div></td>
-</tr>
-</table>
-<table class="req-form-table entry">
-<thead><tr><th style="width:13%;">Sub Activity<br>S/No.</th><th>Description</th><th style="width:8%;">Units</th><th style="width:8%;">Qty</th><th style="width:11%;">Rate</th><th class="num" style="width:13%;">Amount</th><th class="no-print" style="width:52px;">Line</th></tr></thead>
-<tbody id="req-lineitems-body"></tbody>
-<tfoot><tr class="rf-grand"><td colspan="5" style="text-align:right;">GRAND TOTAL</td><td class="num">UGX <span id="req-grand-total">0</span></td><td class="no-print"></td></tr></tfoot>
-</table>
-<div style="display:flex; gap:8px; margin:10px 0 16px; flex-wrap:wrap; justify-content:flex-end;" class="no-print">
-<button class="btn btn-ghost" data-close="modal-req"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M9 9L15 15M15 9L9 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Cancel</button>
-<button type="button" class="btn btn-ghost" id="req-print-draft"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9V3H18V9" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="4" y="9" width="16" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="7" y="14" width="10" height="6" stroke="currentColor" stroke-width="1.8"/></svg>Print</button>
-<button class="btn btn-primary" id="req-route-hod-mid"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5L10.5 15L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="req-route-hod-mid-label">Submit to Head of Department</span></button>
-</div>
-<div class="req-form-words entry"><strong>Amount in words:</strong> <span id="req-amount-words">—</span></div>
-<div class="req-form-signatures preview">
-<div><div class="sig-role">Recommended by,</div><div class="sig-line" id="req-sig-hod"></div><button type="button" class="sig-attach-btn no-print" id="req-sig-hod-btn" data-sig-role="hod" onclick="attachSignature('req-sig-hod', this, 'hod')">🖊 Attach Signature</button><div class="sig-name-fill no-print"><input type="text" id="req-sig-hod-name" placeholder="Name of authorizer"/></div><div class="sig-label">Head of Department</div></div>
-<div><div class="sig-role">Checked and approved by,</div><div class="sig-line" id="req-sig-treasurer"></div><button type="button" class="sig-attach-btn no-print" id="req-sig-treasurer-btn" data-sig-role="treasurer" onclick="attachSignature('req-sig-treasurer', this, 'treasurer')">🖊 Attach Signature</button><div class="sig-name-fill no-print"><input type="text" id="req-sig-treasurer-name" placeholder="Name of authorizer"/></div><div class="sig-label">Senior Treasurer</div></div>
-<div><div class="sig-role">Authorised by</div><div class="sig-line" id="req-sig-clerk"></div><button type="button" class="sig-attach-btn no-print" id="req-sig-clerk-btn" data-sig-role="clerk" onclick="attachSignature('req-sig-clerk', this, 'clerk')">🖊 Attach Signature</button><div class="sig-name-fill no-print"><input type="text" id="req-sig-clerk-name" placeholder="Name of authorizer"/></div><div class="sig-label">Town Clerk</div></div>
-</div>
-<div class="req-route-stack no-print" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0 0;">
-<div style="display:flex; justify-content:center;"><button type="button" class="btn btn-ghost" id="req-route-treasurer" disabled title="Available once the Head of Department has approved this requisition"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12H16M16 12L12.5 8.5M16 12L12.5 15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Forward to Senior Treasurer</button></div>
-<div style="display:flex; justify-content:center;"><button type="button" class="btn btn-ghost" id="req-route-clerk" disabled title="Available once the Senior Treasurer has approved this requisition"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12H16M16 12L12.5 8.5M16 12L12.5 15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Forward to Town Clerk</button></div>
-<div style="display:flex; justify-content:center;"><button type="button" class="btn btn-ghost" id="req-route-auditor" disabled title="Available once the Town Clerk has approved this requisition"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12H16M16 12L12.5 8.5M16 12L12.5 15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Forward to Internal Auditor</button></div>
-</div>
-</div>
-<!-- ===== Cheque Payment Voucher — same header/council masthead as the Requisition Form above, filled in together with it in the same modal ===== -->
-<div class="pv-form" id="pv-form-entry">
-<img src="header.jpg" alt="Ntoroko District Local Government — Karugutu Town Council" class="rf-header-img"/>
-<div class="req-form-header"><div class="rf-title">Cheque Payment Voucher</div></div>
-<div class="rf-refno">Voucher No. <span class="mono" id="pv-form-refno-preview">(assigned on save)</span></div>
-<table class="req-form-meta-table entry">
-<tr>
-<td style="width:50%;"><div class="rf-field"><strong>Department:</strong><input type="text" id="pv-form-department" readonly/></div></td>
-<td style="width:50%;"><div class="rf-field"><strong>Cheque No:</strong><input type="text" id="pv-cheque-no" placeholder="e.g. 004521"/></div></td>
-</tr>
-<tr>
-<td><div class="rf-field"><strong>Budget Output Code:</strong><input type="text" id="pv-form-budgetcode" placeholder="e.g. 000123"/></div></td>
-<td><div class="rf-field"><strong>Payment Voucher Reference No:</strong><input type="text" id="pv-form-pvref" placeholder="e.g. PV/2026/001"/></div></td>
-</tr>
-<tr>
-<td><div class="rf-field"><strong>Dr. To:</strong><input type="text" id="pv-dr-to" placeholder="Payee name"/></div></td>
-<td><div class="rf-field"><strong>Address:</strong><input type="text" id="pv-address" placeholder="Payee address"/></div></td>
-</tr>
-</table>
-<table class="req-form-table entry">
-<thead><tr><th style="width:10%;">Date</th><th>Detailed description of service or article</th><th colspan="2" style="width:20%; text-align:center;">Taken on charge expenditure</th><th class="num" style="width:14%;">Amount (Shs)</th></tr>
-<tr><th></th><th></th><th style="width:10%;">Ledger Folio</th><th style="width:10%;">Date</th><th class="num"></th></tr>
-</thead>
-<tbody id="pv-lineitems-body"></tbody>
-<tfoot><tr class="rf-grand"><td colspan="4" style="text-align:right;">TOTAL</td><td class="num">UGX <span id="pv-grand-total">0</span></td></tr></tfoot>
-</table>
-<div class="pv-certify">
-<div class="pv-plain-line entry"><strong>Authority</strong><input type="text" id="pv-authority" placeholder="e.g. Approved work plan / Council minute ref."/><strong>Total</strong><input type="text" id="pv-total-shs" readonly/></div>
-<div class="pv-plain-line entry"><strong>Approved vote</strong><input type="text" id="pv-approved-vote"/><strong>Account No.</strong><input type="text" id="pv-account-no"/></div>
-<div class="pv-plain-line entry"><strong>approved Estimate</strong><input type="text" id="pv-approved-estimate"/><strong>Cheque payment instruction No</strong><input type="text" id="pv-instruction-no"/></div>
-<p style="margin-top:10px;"><strong>I HEREBY CERTIFY</strong> that the above amount is correct and was incurred under the authority quoted, that the above services has been duly and properly performed / supplies have been received in good condition: that the payment price charge is in accordance with regulations the terms of contract or agreement which are fair and reasonable and that the above expenditure of Shs (in words) <span id="pv-amount-words">—</span> will not cause an excess over the provision made under the authority quoted on this voucher or under programme/sub-programme shown below:</p>
-<p><strong>I FURTHER CERTIFY</strong> that the stores that have been taken on charge, or are expendable, as indicated above.</p>
-</div>
-<div class="req-form-signatures preview" style="grid-template-columns:repeat(2,1fr);">
-<div><div class="sig-role">Signature,</div><div class="sig-line" id="pv-sig-controller"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-controller-btn" data-sig-role="hod" onclick="attachSignature('pv-sig-controller', this, 'hod')">🖊 Attach Signature</button><div class="sig-name-fill no-print"><input type="text" id="pv-sig-controller-name" placeholder="Name of authorizer"/></div><div class="sig-label">Vote Controller</div></div>
-<div><div class="sig-role">Signature,</div><div class="sig-line" id="pv-sig-clerk"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-clerk-btn" data-sig-role="clerk" onclick="attachSignature('pv-sig-clerk', this, 'clerk')">🖊 Attach Signature</button><div class="sig-name-fill no-print"><input type="text" id="pv-sig-clerk-name" placeholder="Name of authorizer"/></div><div class="sig-label">Town Clerk</div></div>
-</div>
-<div class="pv-received-line" style="margin-top:14px;">
-Received / paid this Day <input type="text" class="pv-day" id="pv-day"/> ................. 20<input type="text" class="pv-day" id="pv-year" style="width:36px;"/> in payment of the above account he Sum of shillings <input type="text" class="pv-words" id="pv-words-line" readonly/> (in words).
-</div>
-<table class="pv-block-table">
-<tr>
-<td style="width:34%;">
-<strong>Entered In Vote Book</strong>
-<div class="help-text" style="margin:0 0 6px;">(To be completed by office of origin)</div>
-Date: <input type="text" id="pv-vb-date"/><br/>
-<div class="rf-sig-slot" style="margin-top:6px;"><div class="sig-line" id="pv-sig-vb" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-vb-btn" onclick="attachSignature('pv-sig-vb', this)">🖊 Attach Signature</button></div>
-Department – Clerk: <input type="text" id="pv-vb-dept"/>
-</td>
-<td style="width:33%;">
-<strong>Verified by</strong>
-Date: <input type="text" id="pv-verified-date"/><br/>
-<div class="rf-sig-slot" style="margin-top:6px;"><div class="sig-line" id="pv-sig-verified" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-verified-btn" onclick="attachSignature('pv-sig-verified', this)">🖊 Attach Signature</button></div>
-</td>
-<td style="width:33%;">
-<strong>Passed Payment for (HoF)</strong>
-Shs: <input type="text" id="pv-passed-shs" readonly/><br/>
-Date: <input type="text" id="pv-passed-date"/><br/>
-<div class="rf-sig-slot" style="margin-top:6px;"><div class="sig-line" id="pv-sig-passed" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-passed-btn" data-sig-role="treasurer" onclick="attachSignature('pv-sig-passed', this, 'treasurer')">🖊 Attach Signature</button></div>
-</td>
-</tr>
-</table>
-<table class="pv-block-table">
-<tr>
-<td colspan="2">
-<div class="rf-sig-slot"><strong>Signature of payee</strong><div class="sig-line" id="pv-sig-payee" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-payee-btn" onclick="attachSignature('pv-sig-payee', this)">🖊 Attach Signature</button></div>
-</td>
-</tr>
-<tr>
-<td>
-<div class="rf-sig-slot"><strong>Signature of witness to payment</strong><div class="sig-line" id="pv-sig-witness" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-witness-btn" onclick="attachSignature('pv-sig-witness', this)">🖊 Attach Signature</button></div>
-</td>
-<td>
-<div class="rf-sig-slot"><strong>Signature of paying officer (cashier)</strong><div class="sig-line" id="pv-sig-cashier" style="width:100%;"></div><button type="button" class="sig-attach-btn no-print" id="pv-sig-cashier-btn" onclick="attachSignature('pv-sig-cashier', this)">🖊 Attach Signature</button></div>
-</td>
-</tr>
-</table>
-<table class="pv-block-table">
-<tr>
-<td style="width:60%;">
-<strong>Inter-departmental Clearance</strong><input type="text" id="pv-inter-clearance"/>
-<strong style="margin-top:8px;">Program of Estimate</strong><input type="text" id="pv-program-estimate"/>
-<strong style="margin-top:8px;">Sub Program</strong><input type="text" id="pv-sub-program"/>
-<strong style="margin-top:8px;">Item</strong><input type="text" id="pv-item"/>
-</td>
-<td style="width:40%; text-align:right; vertical-align:bottom;">
-<strong>Total Shs</strong><input type="text" id="pv-total-shs-2" readonly style="text-align:right; font-weight:700; font-size:15px;"/>
-</td>
-</tr>
-</table>
-</div>
-</div>
-<div class="modal-foot foot-nowrap">
-<button class="btn btn-ghost" data-close="modal-req"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M9 9L15 15M15 9L9 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Cancel</button>
-<button class="btn btn-primary" id="req-route-hod"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5L10.5 15L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="req-route-hod-label">Submit to Head of Department</span></button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: Requisition Detail ===== -->
-<div class="overlay" id="modal-req-detail">
-<div class="modal modal-lg">
-<div class="modal-head"><h3 id="rd-title">Requisition</h3><div class="modal-head-actions"><button type="button" class="modal-max-btn" id="modal-req-detail-max-btn" onclick="toggleModalMaximize('modal-req-detail')" title="Maximize">⛶</button><button class="modal-close" data-close="modal-req-detail">&times;</button></div></div>
-<div class="modal-body" id="rd-body"></div>
-<div class="modal-foot" id="rd-foot"></div>
-</div>
-</div>
-<!-- ===== MODAL: Printable Requisition Form (Karugutu Town Council paper layout) ===== -->
-<div class="overlay" id="modal-print-form">
-<div class="modal modal-lg" id="print-form-container" style="max-width:760px;">
-<div class="modal-head no-print"><h3>Requisition Form</h3><button class="modal-close" data-close="modal-print-form">&times;</button></div>
-<div class="modal-body" id="pf-body"></div>
-<div class="modal-foot no-print">
-<button class="btn btn-ghost" data-close="modal-print-form">Close</button>
-<button class="btn btn-primary" onclick="window.print()">Print</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: My Settings (profile + signature) ===== -->
-<div class="overlay" id="modal-settings">
-<div class="modal">
-<div class="modal-head"><h3>My Settings</h3><button class="modal-close" data-close="modal-settings">&times;</button></div>
-<div class="modal-body">
-<div class="detail-grid" style="margin-bottom:6px;">
-<div><div class="detail-label">Name</div><div class="detail-value" id="set-name">—</div></div>
-<div><div class="detail-label">Role</div><div class="detail-value" id="set-role">—</div></div>
-<div><div class="detail-label">Email</div><div class="detail-value" id="set-email">—</div></div>
-<div><div class="detail-label">Department</div><div class="detail-value" id="set-dept">—</div></div>
-</div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-settings">Close</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: New User ===== -->
-<div class="overlay" id="modal-user">
-<div class="modal">
-<div class="modal-head"><h3 id="u-modal-title">New User</h3><button class="modal-close" data-close="modal-user">&times;</button></div>
-<div class="modal-body">
-<div class="form-grid">
-<div class="field span2"><label>Full Name</label><input type="text" id="u-name"/></div>
-<div class="field span2"><label>Email</label><input type="email" id="u-email"/></div>
-<div class="field"><label id="u-password-label">Temporary Password</label><input type="text" id="u-password"/></div>
-<div class="field"><label>Position</label><input type="text" id="u-position" placeholder="e.g. Senior Accountant"/></div>
-<div class="field"><label>Telephone</label><input type="text" id="u-telephone" placeholder="e.g. 0700 000 000"/></div>
-<div class="field"><label>Role</label>
-<select id="u-role">
-<option value="staff">Requisitioner</option>
-<option value="hod">First Level Approver</option>
-<option value="treasurer">Budget Controller</option>
-<option value="clerk">Accounting Officer</option>
-<option value="admin">Local System Administrator</option>
-</select>
-</div>
-<div class="field span2"><label id="u-department-label">Department</label><select id="u-department"></select><div class="help-text" id="u-department-hint" style="display:none; margin-top:4px;">Required for Head of Department accounts — a Head of Department without a Department assigned will not see any requisitions awaiting their approval.</div></div>
-</div>
-<div class="divider"></div>
-<div class="field-section">
-<span class="kicker">Signature</span>
-<div class="help-text" style="margin-top:4px;">Upload an image of this user's signature (PNG or JPG). It's attached automatically wherever their name appears on a printed Requisition Form — as requester, or when they approve, recommend or authorise at their stage.</div>
-<div style="margin-top:14px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-<div class="sig-preview-box" id="u-sig-preview-box">
-<span id="u-sig-preview-empty" style="font-size:11px; color:var(--ink-500); padding:0 10px; text-align:center;">No signature uploaded</span>
-<img id="u-sig-preview-img" style="display:none;" />
-</div>
-<div style="display:flex; flex-direction:column; gap:8px;">
-<input type="file" id="u-sig-file-input" accept=".png,.jpg,.jpeg" style="display:none;" />
-<button type="button" class="btn btn-primary" id="u-sig-upload-btn">Upload Signature</button>
-<button type="button" class="btn btn-ghost" id="u-sig-remove-btn" style="display:none;">Remove Signature</button>
-</div>
-</div>
-<div class="login-error" id="u-sig-error" style="margin-top:10px;"></div>
-</div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-user">Cancel</button>
-<button class="btn btn-primary" id="u-create-btn">Create User</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: New Department ===== -->
-<div class="overlay" id="modal-dept">
-<div class="modal">
-<div class="modal-head"><h3 id="d-modal-title">New Department</h3><button class="modal-close" data-close="modal-dept">&times;</button></div>
-<div class="modal-body">
-<div class="field"><label>Department Name</label><input type="text" id="d-name"/></div>
-<div class="field"><label>Department Code</label><input type="text" id="d-code" placeholder="e.g. FIN"/></div>
-<div class="field"><label>Abbreviation</label><input type="text" id="d-abbr" placeholder="e.g. AMS"/><div class="help-text" style="margin-top:4px;">Used on the Departments page and in generated reference numbers. Leave blank to auto-generate from the Department Name.</div></div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-dept">Cancel</button>
-<button class="btn btn-primary" id="d-create-btn">Create Department</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: New / Edit Budget Estimates Data Entry Form ===== -->
-<div class="overlay" id="modal-bc">
-<div class="modal modal-lg">
-<div class="modal-head"><h3 id="bc-modal-title">New Budget Estimates Data Entry Form</h3><button class="modal-close" data-close="modal-bc">&times;</button></div>
-<div class="modal-body">
-<div class="field-section">
-<span class="kicker">Placement</span>
-<div class="form-grid" style="margin-top:8px;">
-<div class="field"><label>Work Plan</label><select id="bc-workplan"></select></div>
-<div class="field"><label>Department</label><select id="bc-department"></select></div>
-<div class="field span2"><label>Service Area</label><input type="text" id="bc-service-area" placeholder="e.g. Health, Education, Roads"/></div>
-</div>
-</div>
-<div class="divider"></div>
-<div class="field-section">
-<span class="kicker">Output Details</span>
-<div class="form-grid" style="margin-top:8px;">
-<div class="field"><label>Budget Output Code</label><input type="text" id="bc-code" placeholder="e.g. 10103"/></div>
-<div class="field"><label>Unit of Measure</label><input type="text" id="bc-unit" placeholder="Number / %"/></div>
-<div class="field span2"><label>Budget Output Description</label><input type="text" id="bc-desc"/></div>
-<div class="field"><label>Programme</label><input type="text" id="bc-programme"/></div>
-<div class="field"><label>Sub-Programme</label><input type="text" id="bc-subprogramme"/></div>
-<div class="field span2"><label>PIAP Output Description</label><input type="text" id="bc-piap-desc" placeholder="Programme Implementation Action Plan output description"/></div>
-<div class="field span2"><label>PIAP Output Indicator</label><input type="text" id="bc-piap-indicator" placeholder="Programme Implementation Action Plan indicator"/></div>
-</div>
-</div>
-<div class="divider"></div>
-<div class="field-section">
-<span class="kicker">Targets, Quarterly Plan &amp; Funding</span>
-<div class="form-grid" style="margin-top:8px;">
-<div class="field"><label>Baseline Value</label><input type="number" id="bc-baseline" value="0"/></div>
-<div class="field"><label>Planned Target</label><input type="number" id="bc-target" value="0"/></div>
-<div class="field span2"><label>Baseline Note <span style="font-weight:400;color:var(--ink-500);">(optional — narrative baseline, e.g. "25% of Council area mapped for vectors")</span></label><input type="text" id="bc-baseline-note" placeholder="Free-text baseline detail, if any"/></div>
-<div class="field span2"><label>Target Note <span style="font-weight:400;color:var(--ink-500);">(optional — narrative target, e.g. "Conduct 4 quarterly vector surveillance exercises")</span></label><input type="text" id="bc-target-note" placeholder="Free-text target detail, if any"/></div>
-<div class="field span2"><label>Actual Output</label><input type="text" id="bc-actual" placeholder="Actual output achieved so far"/></div>
-<div class="field"><label>Q1 (UGX)</label><input type="number" id="bc-q1" value="0"/></div>
-<div class="field"><label>Q2 (UGX)</label><input type="number" id="bc-q2" value="0"/></div>
-<div class="field"><label>Q3 (UGX)</label><input type="number" id="bc-q3" value="0"/></div>
-<div class="field"><label>Q4 (UGX)</label><input type="number" id="bc-q4" value="0"/></div>
-<div class="field"><label>Total Budget (UGX)</label><input type="text" id="bc-total" value="0" readonly style="background:var(--paper); font-family:var(--font-mono);"/></div>
-<div class="field"><label>Funding Source</label><input type="text" id="bc-funding" value="Local Revenue"/></div>
-<div class="field span2"><label>Responsible Party</label><input type="text" id="bc-responsible" placeholder="e.g. Head of Department, Officer name"/></div>
-</div>
-<div class="help-text">Total Budget is the sum of Q1–Q4 and is calculated automatically.</div>
-</div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-bc">Cancel</button>
-<button class="btn btn-primary" id="bc-create-btn">Create Budget Estimate</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: New / Edit Work Plan ===== -->
-<div class="overlay" id="modal-wp">
-<div class="modal modal-lg">
-<div class="modal-head"><h3 id="wpn-modal-title">New Work Plan</h3><button class="modal-close" data-close="modal-wp">&times;</button></div>
-<div class="modal-body">
-<div class="form-grid">
-<div class="field"><label>Financial Year</label><input type="text" id="wpn-fy" placeholder="e.g. 2026/27"/></div>
-<div class="field"><label>Title</label><input type="text" id="wpn-title" placeholder="e.g. Annual Work Plan and Budget"/></div>
-</div>
-<div class="help-text">Once created, this work plan becomes available for budget codes to be attached to.</div>
-<div class="divider"></div>
-<span class="kicker">Table Headings For This Work Plan</span>
-<div class="help-text" style="margin-top:2px; margin-bottom:10px;">These are the headings shown above the four Work Plan &amp; Budget tables. Leave any of them blank to fall back to a default built from the financial year above.</div>
-<div class="field"><label>Revenue Summary Table Heading</label><input type="text" id="wpn-title-revenue-summary" placeholder="e.g. APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027"/></div>
-<div class="field"><label>Departmental Summary Table Heading</label><input type="text" id="wpn-title-dept-summary" placeholder="e.g. APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027"/></div>
-<div class="field"><label>Revenue Estimates Table Heading</label><input type="text" id="wpn-title-revenue-detail" placeholder="e.g. APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES FOR FY 2026/2027"/></div>
-<div class="field"><label>Annual Work Plan Table Heading</label><input type="text" id="wpn-title-main-table" placeholder="e.g. APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027"/></div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-wp">Cancel</button>
-<button class="btn btn-primary" id="wpn-create-btn">Create Work Plan</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: New / Edit Revenue Source (category + sub rows) ===== -->
-<div class="overlay" id="modal-rev">
-<div class="modal modal-lg">
-<div class="modal-head"><h3 id="rev-modal-title">New Revenue Source</h3><button class="modal-close" data-close="modal-rev">&times;</button></div>
-<div class="modal-body">
-<div class="field"><label>Work Plan</label><select id="rev-workplan"></select></div>
-<div class="form-grid">
-<div class="field">
-<label>PBS Fund Code</label>
-<select id="rev-fund-code"></select>
-<input type="text" id="rev-fund-code-custom" class="rev-custom-field" placeholder="e.g. 001" />
-</div>
-<div class="field">
-<label>Revenue Source</label>
-<select id="rev-source-name"></select>
-<input type="text" id="rev-source-name-custom" class="rev-custom-field" placeholder="e.g. Central Government Transfers (GoU)" />
-</div>
-</div>
-<div class="field">
-<label>Functional Definition Title</label>
-<select id="rev-functional-def"></select>
-<textarea id="rev-functional-def-custom" class="rev-custom-field" rows="3" placeholder="e.g. Regular structural wage, non-wage recurrent and capital grants&#10;Each new line becomes its own point on the printed table"></textarea>
-</div>
-<div class="field-section">
-<span class="kicker">Sub Rows — Revenue Items</span>
-<div class="table-wrap" style="margin-top:8px;">
-<table>
-<thead>
-<tr><th class="wrap">Revenue Item (Functional Definition)</th><th>Approved Estimate (UGX)</th><th></th></tr>
-</thead>
-<tbody id="rev-items-body"></tbody>
-</table>
-</div>
-<div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
-<button type="button" class="btn btn-ghost" id="rev-add-item-btn">+ Add Sub Row</button>
-</div>
-<div class="help-text">Each sub row is one revenue item under the functional definition title above. The Category Total — and therefore the Approved Budget Amount shown in the Summary of Sources of Revenue — is obtained automatically as the sum of these sub rows.</div>
-</div>
-<div class="field"><label>Approved Budget Amount (UGX) — used only when there are no sub rows</label><input type="number" id="rev-amount" value="0" /></div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-rev">Cancel</button>
-<button class="btn btn-primary" id="rev-create-btn">Create Revenue Source</button>
-</div>
-</div>
-</div>
-<!-- ===== MODAL: Single-page Document Viewer (Auditor review) ===== -->
-<div class="overlay" id="modal-doc-view">
-<div class="modal modal-lg" style="max-width:940px;">
-<div class="modal-head"><h3 id="dv-title">Accountability Documents</h3><button class="modal-close" data-close="modal-doc-view">&times;</button></div>
-<div class="modal-body" id="dv-body" style="max-height:70vh;"></div>
-<div class="modal-foot" id="dv-foot"></div>
-</div>
-</div>
-<!-- ===== MODAL: Upload document ===== -->
-<div class="overlay" id="modal-upload">
-<div class="modal">
-<div class="modal-head"><h3>Upload Accountability Document</h3><button class="modal-close" data-close="modal-upload">&times;</button></div>
-<div class="modal-body">
-<div class="field"><label>Document Type</label>
-<select id="up-type">
-<option value="receipt">Receipt</option>
-<option value="attendance">Attendance Sheet</option>
-<option value="voucher">Payment Voucher</option>
-<option value="supporting">Supporting Document</option>
-<option value="other">Other</option>
-</select>
-</div>
-<div class="field"><label>File (PDF, DOCX, JPG, PNG)</label><input type="file" id="up-file" accept=".pdf,.docx,.jpg,.jpeg,.png"/></div>
-</div>
-<div class="modal-foot">
-<button class="btn btn-ghost" data-close="modal-upload">Cancel</button>
-<button class="btn btn-primary" id="up-submit-btn">Upload</button>
-</div>
-</div>
-</div>
-<script>
-/* ==========================================================================
-KTC-IPFMS — Frontend application logic (vanilla JS, no build step)
-========================================================================== */
-// ---- Configuration --------------------------------------------------------
-const KTC_BACKEND_URL = 'https://ktc-backend-5yz9.onrender.com';
-const API_BASE = localStorage.getItem('ktc_api_base') || KTC_BACKEND_URL;
-let STATE = {
-token: localStorage.getItem('ktc_token') || null,
-role: localStorage.getItem('ktc_role') || null,
-name: localStorage.getItem('ktc_name') || null,
-userId: localStorage.getItem('ktc_user_id') || null,
-email: null,
-position: null,
-departments: [],
-workplans: [],
-budgetCodes: [],
-revenueSources: [],
-revItems: [],
-currentReqId: null,
-editingBudgetCodeId: null,
-editingWorkPlanId: null,
-editingDepartmentId: null,
-editingUserId: null,
-editingRequisitionId: null,
-editingRevenueSourceId: null,
-reqLineItems: [],
-reqBudgetCodesForDept: [],
-signatureUrl: null,
-};
+import os
+import io
+import re
+import json
+import time
+import uuid
+import logging
+import datetime as dt
+from decimal import Decimal
+from typing import Optional, List, Union, Tuple
 
-const REVENUE_SUMMARY_CATEGORIES = [
-  {
-    key: 'gou',
-    pbs_fund_code: '001',
-    source_of_financing_name: 'Central Government Transfers (GoU)',
-    functional_definition: 'Regular structural wage, non-wage recurrent, and capital grants.',
-    match: (r) => {
-      const code = String(r.pbs_fund_code || '').trim();
-      const name = String(r.source_of_financing_name || '').toLowerCase();
-      return code === '001' || name.includes('central government') || name.includes('gou') || name.includes('transfers');
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, EmailStr, Field
+
+from sqlalchemy import (
+    create_engine, Column, Integer, String, Float, Boolean, DateTime,
+    ForeignKey, Text, Enum as SAEnum, func
+)
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session, joinedload
+from sqlalchemy.exc import IntegrityError
+
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+
+import boto3
+from botocore.exceptions import ClientError
+
+# PDF report generation (pip install reportlab)
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+
+logger = logging.getLogger("ktc_ipfms")
+logging.basicConfig(level=logging.INFO)
+
+# --------------------------------------------------------------------------
+# Configuration
+# --------------------------------------------------------------------------
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    # Render / Heroku style URLs use the old "postgres://" scheme; SQLAlchemy
+    # (via psycopg2) needs "postgresql://".
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./ktc.db"
+
+JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret-in-production")
+JWT_ALGORITHM = "HS256"
+# The JWT's own lifetime is intentionally long — actual session length is now
+# enforced client-side by a 10-minute *inactivity* timer (see the frontend's
+# idle-logout logic) instead of by the token itself expiring on a fixed
+# schedule. A fixed 10-minute token previously logged active users out mid-task
+# regardless of whether they were still using the system.
+ACCESS_TOKEN_EXPIRE_MINUTES = 480
+
+# --------------------------------------------------------------------------
+# Backblaze B2 (S3-compatible) object storage
+# --------------------------------------------------------------------------
+B2_BUCKET_NAME = os.getenv("B2_BUCKET_NAME", "uploads-dir")
+B2_ENDPOINT_URL = os.getenv("B2_ENDPOINT_URL", "https://s3.us-east-005.backblazeb2.com")
+B2_KEY_ID = os.getenv("B2_KEY_ID", "0055ca7845641d30000000002")
+B2_APPLICATION_KEY = os.getenv("B2_APPLICATION_KEY", "K005NNeGM9r28ujQ3jvNEQy2zUiu0TI")
+B2_DOCUMENTS_FOLDER = "ktc-documents"
+B2_SIGNATURES_FOLDER = "ktc-signatures"
+
+b2_client = boto3.client(
+    "s3",
+    endpoint_url=B2_ENDPOINT_URL,
+    aws_access_key_id=B2_KEY_ID,
+    aws_secret_access_key=B2_APPLICATION_KEY,
+)
+
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+origins = ["*"] if CORS_ORIGINS.strip() == "*" else [o.strip() for o in CORS_ORIGINS.split(",")]
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+ROLES = [
+    "admin",       # System Administrator
+    "staff",       # Staff Member
+    "hod",         # Head of Department
+    "treasurer",   # Senior Treasurer
+    "clerk",       # Town Clerk
+    "auditor",     # Internal Auditor
+]
+
+# --------------------------------------------------------------------------
+# Lightweight in-memory response cache
+# --------------------------------------------------------------------------
+# The Work Plan & Budget table was slow to render because every request
+# recomputed committed/available balances with a fresh DB round-trip PER
+# ROW (see the old BudgetCode.committed_amount property, which opened a new
+# SessionLocal() session per budget code — an N+1 query pattern). Two things
+# fix this:
+#   1. list_budget_codes now computes committed amounts for the whole page
+#      in a single grouped query (see _bulk_committed_amounts) instead of
+#      one query per row.
+#   2. The fully-serialised response for a given (work_plan_id,
+#      department_id, search) combination is cached in memory for a short
+#      TTL, so repeat requests (e.g. re-opening the Work Plan & Budget tab,
+#      or switching between filters that were already viewed) are served
+#      instantly without touching the database at all.
+# The cache is invalidated proactively whenever the underlying data changes
+# (budget code create/update/import, requisition submit/approve/reject,
+# department or work plan creation), so results never go stale beyond
+# that TTL by more than the time it takes those write paths to run.
+_CACHE_TTL_SECONDS = 90
+_response_cache: dict = {}
+
+
+def _cache_get(key: str):
+    entry = _response_cache.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if time.time() - ts > _CACHE_TTL_SECONDS:
+        _response_cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: str, value):
+    _response_cache[key] = (time.time(), value)
+
+
+def _cache_invalidate_prefix(prefix: str):
+    for k in [k for k in _response_cache if k.startswith(prefix)]:
+        _response_cache.pop(k, None)
+
+
+def _invalidate_budget_code_caches():
+    _cache_invalidate_prefix("budget_codes:")
+    _cache_invalidate_prefix("dashboard_stats:")
+
+
+def _invalidate_revenue_source_caches():
+    _cache_invalidate_prefix("revenue_sources:")
+
+
+# --------------------------------------------------------------------------
+# Shared numeric amount parser
+# --------------------------------------------------------------------------
+_THOUSANDS_SPACE_RE = re.compile(r"(?<=\d)[\s\u00A0\u2009\u202F](?=\d)")
+_AMOUNT_CURRENCY_NOISE = ("UGX", "Ugx", "ugx", "USH", "Ush", "ush", "/=", "=", "%")
+
+
+def parse_amount_verbose(v):
+    """Parse any raw value (native number, text, None) into a float.
+
+    Returns (value, ok, original_text):
+      - value: the parsed float (0.0 if v was empty/None, or if parsing
+        ultimately failed)
+      - ok: False only when a genuinely non-empty, non-numeric value had to
+        be discarded — lets callers that care (the Excel importer) warn the
+        user instead of staying silent
+      - original_text: the original value as text, for error messages
+    """
+    if v is None:
+        return 0.0, True, ""
+    if isinstance(v, bool):
+        return 0.0, True, str(v)
+    if isinstance(v, (int, float, Decimal)):
+        return float(v), True, str(v)
+
+    original = str(v)
+    s = original.strip()
+    if s == "":
+        return 0.0, True, s
+
+    negative = False
+    if s.startswith("(") and s.endswith(")"):
+        negative = True
+        s = s[1:-1].strip()
+    elif s.startswith("-"):
+        negative = True
+        s = s[1:].strip()
+
+    s = s.replace("\u00A0", " ").replace("\u2009", " ").replace("\u202F", " ")
+
+    for token in _AMOUNT_CURRENCY_NOISE:
+        s = s.replace(token, "")
+    s = s.strip()
+
+    s = s.replace(",", "")
+    s = _THOUSANDS_SPACE_RE.sub("", s)
+    s = s.strip()
+
+    if s == "" or s == "-":
+        return 0.0, True, original.strip()
+
+    try:
+        result = float(s)
+    except (TypeError, ValueError):
+        return 0.0, False, original.strip()
+
+    return (-result if negative else result), True, original.strip()
+
+
+def parse_amount(v) -> float:
+    """Best-effort float conversion — never raises, defaults to 0.0."""
+    value, _ok, _original = parse_amount_verbose(v)
+    return value
+
+
+_LEADING_NUMBER_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+
+
+def parse_leading_number(v) -> Tuple[float, bool]:
+    """For fields (Baseline Value / Planned Target) that are frequently
+    narrative or multi-part text rather than a single number — e.g.
+    "25% of Council area mapped for vectors" or a per-quarter list like
+    "12; 4; 4; 4; 4; 4; 4" — pull out the first number found anywhere in
+    the text so the value is still usable in numeric aggregates/charts,
+    rather than collapsing straight to 0.
+
+    Returns (value, was_full_text): was_full_text is True when the raw
+    value wasn't a clean standalone number (i.e. there was extra text
+    around/after the number, or no number at all) — signals to the caller
+    that the original text is worth preserving in a *_note column.
+    """
+    value, ok, original = parse_amount_verbose(v)
+    if ok:
+        # Already a clean number (or genuinely empty) — nothing extra to
+        # preserve.
+        return value, False
+    match = _LEADING_NUMBER_RE.search(original)
+    if not match:
+        return 0.0, True
+    try:
+        return float(match.group(0).replace(",", "")), True
+    except ValueError:
+        return 0.0, True
+
+
+# --------------------------------------------------------------------------
+# Models
+# --------------------------------------------------------------------------
+
+_DEPT_ABBR_STOPWORDS = {"and", "of", "the", "for", "&", "in", "to", "a", "an"}
+
+
+def department_abbreviation(name: Optional[str]) -> str:
+    """Derives a short abbreviation from a department name, for display next
+    to the department's Name in the Departments table and for use as the
+    department token in generated requisition reference numbers.
+
+    Rule: drop the LAST word of the name (departments here typically end in
+    a generic word like "Services", "Department", "Unit"), then take the
+    first letter of each remaining significant word, skipping small linking
+    words ("and", "of", "the", "&", etc.).
+
+    e.g. "Administration and Management Support Services" -> drop "Services"
+    -> "Administration and Management Support" -> skip "and" -> A + M + S
+    -> "AMS".
+    """
+    words = re.findall(r"[A-Za-z0-9]+", name or "")
+    if len(words) > 1:
+        words = words[:-1]
+    letters = [w[0].upper() for w in words if w.lower() not in _DEPT_ABBR_STOPWORDS]
+    if not letters:
+        # Every remaining word was a stopword (rare) — fall back to using
+        # them all rather than returning nothing.
+        letters = [w[0].upper() for w in words]
+    abbr = "".join(letters)[:10]
+    return abbr or "GEN"
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(150), unique=True, nullable=False)
+    code = Column(String(20), unique=True, nullable=False)
+    # Stored (editable) column — defaults to department_abbreviation(name)
+    # when left blank on create/update (see create_department() /
+    # update_department()), but can be overridden by hand from the
+    # Departments page's Edit modal. Existing rows are backfilled by
+    # _backfill_department_abbreviations() below.
+    abbreviation = Column(String(20), nullable=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    users = relationship("User", back_populates="department")
+    budget_codes = relationship("BudgetCode", back_populates="department")
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(150), nullable=False)
+    email = Column(String(150), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    # Plaintext copy of the current password, kept ONLY so an administrator
+    # can see it on the Users table. This is a real security trade-off
+    # (anyone with admin access, or a copy of the database, can read every
+    # user's password) — it exists purely because it was explicitly
+    # requested for this admin screen. hashed_password above remains the
+    # value actually used to authenticate.
+    plain_password = Column(String(255), nullable=True)
+    role = Column(String(20), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    position = Column(String(150), nullable=True)
+    telephone = Column(String(40), nullable=True)
+    signature_path = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    department = relationship("Department", back_populates="users")
+
+    @property
+    def signature_url(self):
+        return f"/files/{self.signature_path}" if self.signature_path else None
+
+
+class WorkPlan(Base):
+    __tablename__ = "work_plans"
+    id = Column(Integer, primary_key=True, index=True)
+    financial_year = Column(String(20), nullable=False)   # e.g. "2026/27"
+    title = Column(String(200), nullable=False)
+    # Headings shown above the 4 Work Plan & Budget tables for this work
+    # plan. Maintained here (via the New/Edit Work Plan modal) rather than
+    # per-table, so switching the work plan dropdown switches every table's
+    # heading in one go, and there is exactly one place to edit them.
+    title_revenue_summary = Column(String(500), nullable=True)
+    title_dept_summary = Column(String(500), nullable=True)
+    title_revenue_detail = Column(String(500), nullable=True)
+    title_main_table = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    budget_codes = relationship("BudgetCode", back_populates="work_plan")
+    revenue_sources = relationship("RevenueSource", back_populates="work_plan")
+
+
+class BudgetCode(Base):
+    __tablename__ = "budget_codes"
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    # These are free-text narrative fields copied verbatim from Council
+    # work-plan workbooks, which routinely run well past 255 characters
+    # (e.g. a "Budget Output Description" of 400+ characters is normal for
+    # this dataset) — stored as Text (unbounded) rather than a bounded
+    # VARCHAR so a long but perfectly legitimate description never causes
+    # the whole import batch to fail with a Postgres
+    # StringDataRightTruncation error.
+    service_area = Column(Text)
+    code = Column(String(30), nullable=False)                  # Budget Output Code
+    output_description = Column(Text, nullable=False)          # Budget Output Description
+    programme = Column(Text)
+    sub_programme = Column(Text)
+    piap_output_description = Column(Text)
+    piap_output_indicator = Column(Text)
+    unit_of_measure = Column(String(100))
+    baseline_value = Column(Float, default=0)
+    # Full original text for Baseline Value / Planned Target as entered in
+    # the source workbook. Many PIAP indicators record these as narrative
+    # or multi-part values (e.g. "25% of Council area mapped for vectors",
+    # "12; 4; 4; 4; 4; 4; 4" for per-quarter figures) rather than a single
+    # number. baseline_value/planned_target hold a best-effort numeric
+    # figure (a leading number extracted from the text, or 0) so existing
+    # charts/aggregates keep working; these _note columns preserve the
+    # full original text so nothing is lost on import.
+    baseline_note = Column(Text)
+    planned_target = Column(Float, default=0)
+    target_note = Column(Text)
+    actual_output = Column(Text)
+    q1_amount = Column(Float, default=0)
+    q2_amount = Column(Float, default=0)
+    q3_amount = Column(Float, default=0)
+    q4_amount = Column(Float, default=0)
+    funding_source = Column(String(255), default="Local Revenue")  # Revenue Source
+    # Often a multi-line list of several named officers/committees in
+    # practice (e.g. "Town Mayor, Town Clerk, LCII Chairpersons, Ward
+    # Development Committees, Clerk to Council") — Text avoids truncation.
+    responsible_party = Column(Text)
+
+    work_plan = relationship("WorkPlan", back_populates="budget_codes")
+    department = relationship("Department", back_populates="budget_codes")
+    activities = relationship("Activity", back_populates="budget_code")
+
+    @property
+    def allocated_amount(self):
+        return (
+            parse_amount(self.q1_amount) + parse_amount(self.q2_amount) +
+            parse_amount(self.q3_amount) + parse_amount(self.q4_amount)
+        )
+
+    @property
+    def committed_amount(self):
+        # NOTE: kept for any callers that need a single budget code's
+        # committed amount in isolation. Bulk endpoints (list_budget_codes,
+        # dashboard_stats) should use _bulk_committed_amounts() instead to
+        # avoid the N+1 query pattern this property has when used per-row
+        # in a loop.
+        db = SessionLocal()
+        try:
+            reqs = db.query(Requisition).filter(
+                Requisition.budget_code_id == self.id,
+                Requisition.status.notin_(["rejected", "returned", "draft"])
+            ).all()
+            return sum(r.amount_requested for r in reqs)
+        finally:
+            db.close()
+
+    @property
+    def available_balance(self):
+        return self.allocated_amount - self.committed_amount
+
+
+class RevenueSource(Base):
+    __tablename__ = "revenue_sources"
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
+    pbs_fund_code = Column(String(50))
+    source_of_financing_name = Column(String(255), nullable=False)
+    functional_definition = Column(Text)
+    # Manually-entered Approved Budget Amount. This is now used ONLY as a
+    # fallback for revenue sources that have no sub rows (revenue items) —
+    # once at least one RevenueSourceItem exists under this source, the
+    # Approved Budget Amount / Category Total is obtained automatically as
+    # the sum of those sub rows instead (see revenue_source_to_out below),
+    # matching the "Revenue Entry Table" behaviour in the UI.
+    approved_budget_amount = Column(Float, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    work_plan = relationship("WorkPlan", back_populates="revenue_sources")
+    items = relationship(
+        "RevenueSourceItem",
+        back_populates="revenue_source",
+        cascade="all, delete-orphan",
+        order_by="RevenueSourceItem.id",
+    )
+
+
+class RevenueSourceItem(Base):
+    """A single sub row (revenue item) under a RevenueSource category, e.g.
+    under PBS Fund Code / Source of Financing "Central Government Transfers
+    (GoU)" there might be sub rows "Unconditional Grant – Wage",
+    "Unconditional Grant – Non-Wage", etc., each with its own Approved
+    Estimate. The parent RevenueSource's Category Total (and therefore the
+    Approved Budget Amount shown in the Summary of Sources of Revenue) is
+    the sum of these sub rows whenever any exist."""
+    __tablename__ = "revenue_source_items"
+    id = Column(Integer, primary_key=True, index=True)
+    revenue_source_id = Column(Integer, ForeignKey("revenue_sources.id"), nullable=False)
+    description = Column(Text, nullable=False)
+    amount = Column(Float, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    revenue_source = relationship("RevenueSource", back_populates="items")
+
+
+class Activity(Base):
+    __tablename__ = "activities"
+    id = Column(Integer, primary_key=True, index=True)
+    budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    quarter = Column(String(10), default="Q1")  # Q1-Q4
+    is_active = Column(Boolean, default=True)
+
+    budget_code = relationship("BudgetCode", back_populates="activities")
+
+
+class Requisition(Base):
+    __tablename__ = "requisitions"
+    id = Column(Integer, primary_key=True, index=True)
+    ref_no = Column(String(60), unique=True, nullable=False)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    budget_code_id = Column(Integer, ForeignKey("budget_codes.id"), nullable=True)
+    activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
+    activity_details = Column(Text)
+    subject = Column(String(255), nullable=True)
+    # Financial Year / Quarter this requisition is being drawn against, and
+    # the requisitioner's typed-in name/position on the paper-form replica
+    # (kept separate from the User account, since the Requisitioner field is
+    # now free text the person fills in themselves rather than a read-only
+    # mirror of their account name).
+    financial_year = Column(String(20), nullable=True)
+    quarter = Column(String(10), nullable=True)
+    requester_name = Column(String(150), nullable=True)
+    requester_position = Column(String(150), nullable=True)
+    # Requisitioner's mobile/telephone number, typed on the paper-form
+    # replica's Requisitioner row (kept separate from the User account's
+    # own telephone, same reasoning as requester_name/requester_position).
+    requester_mobile = Column(String(40), nullable=True)
+    # Free-typed Budget Output Code as entered on the form. Kept alongside
+    # budget_code_id (which links to a real BudgetCode record when the
+    # typed code matches one on file) so a code that doesn't match any
+    # known BudgetCode is still captured rather than silently dropped.
+    budget_output_code_text = Column(String(50), nullable=True)
+    payment_voucher_number = Column(String(100), nullable=True)
+    line_items = Column(Text, nullable=True)
+    # Free-form JSON blob holding the fields specific to the Cheque Payment
+    # Voucher section of the combined modal (Dr. To, Cheque No, Address,
+    # Authority, Approved Vote, Account No, ledger folio, etc). Kept as one
+    # column rather than a dozen new ones since these fields are entered
+    # together and displayed together.
+    voucher_data = Column(Text, nullable=True)
+    amount_requested = Column(Float, nullable=False)
+    status = Column(String(20), default="draft")
+    current_stage = Column(String(20), default="hod")  # hod / treasurer / clerk / done
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    requester = relationship("User", foreign_keys=[requester_id])
+    department = relationship("Department")
+    budget_code = relationship("BudgetCode")
+    activity = relationship("Activity")
+    approvals = relationship("ApprovalHistory", back_populates="requisition", order_by="ApprovalHistory.id")
+    documents = relationship("Document", back_populates="requisition")
+    accountability = relationship("AccountabilityRecord", back_populates="requisition", uselist=False)
+
+
+class ApprovalHistory(Base):
+    __tablename__ = "approval_history"
+    id = Column(Integer, primary_key=True, index=True)
+    requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
+    stage = Column(String(20), nullable=False)   # hod / treasurer / clerk
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(20), nullable=False)  # approve / reject / return
+    comments = Column(Text)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    requisition = relationship("Requisition", back_populates="approvals")
+    actor = relationship("User")
+
+
+class AccountabilityRecord(Base):
+    __tablename__ = "accountability_records"
+    id = Column(Integer, primary_key=True, index=True)
+    requisition_id = Column(Integer, ForeignKey("requisitions.id"), unique=True, nullable=False)
+    auditor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="pending")  # pending / verified / flagged
+    remarks = Column(Text)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    requisition = relationship("Requisition", back_populates="accountability")
+    auditor = relationship("User")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True, index=True)
+    requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    stored_path = Column(String(500), nullable=False)
+    doc_type = Column(String(50), default="supporting")  # supporting / receipt / voucher / attendance / other
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    requisition = relationship("Requisition", back_populates="documents")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message = Column(String(500), nullable=False)
+    category = Column(String(30), default="info")
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+    link_requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String(150), nullable=False)
+    details = Column(Text)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
+Base.metadata.create_all(bind=engine)
+
+
+def _run_lightweight_migrations():
+    statements = [
+        "ALTER TABLE budget_codes ADD COLUMN indicator VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN q1_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q2_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q3_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN q4_amount FLOAT DEFAULT 0",
+        "ALTER TABLE budget_codes ADD COLUMN service_area VARCHAR(150)",
+        "ALTER TABLE budget_codes ADD COLUMN piap_output_description VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
+        "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
+        # Preserves the full original Baseline Value / Planned Target text
+        # for rows where it's narrative or multi-part (e.g. "25% of
+        # Council area mapped for vectors") rather than a clean number —
+        # baseline_value/planned_target keep a best-effort numeric figure
+        # for existing charts/aggregates, these columns hold the source
+        # text so nothing is lost on import.
+        "ALTER TABLE budget_codes ADD COLUMN baseline_note TEXT",
+        "ALTER TABLE budget_codes ADD COLUMN target_note TEXT",
+        "ALTER TABLE users ADD COLUMN position VARCHAR(150)",
+        "ALTER TABLE users ADD COLUMN telephone VARCHAR(40)",
+        "ALTER TABLE users ADD COLUMN signature_path VARCHAR(500)",
+        "ALTER TABLE users ADD COLUMN plain_password VARCHAR(255)",
+        "ALTER TABLE requisitions ADD COLUMN subject VARCHAR(255)",
+        "ALTER TABLE requisitions ADD COLUMN line_items TEXT",
+        "ALTER TABLE requisitions ADD COLUMN payment_voucher_number VARCHAR(100)",
+        "ALTER TABLE requisitions ADD COLUMN voucher_data TEXT",
+        # Budget Code / Activity are no longer filled in on the requisition
+        # entry screen (removed per Council request) — a requisition can now
+        # be saved without one, so the column must accept NULL. Postgres-only
+        # syntax; fails harmlessly on SQLite, which never enforced this.
+        "ALTER TABLE requisitions ALTER COLUMN budget_code_id DROP NOT NULL",
+        # ref_no used to be capped at 40 chars ("KTC-REQ-YYYY-00001"); the new
+        # "KTC-RQ-YY-MM-DD-<payment voucher number>" format can run longer
+        # depending on what the PV number looks like, so widen the column.
+        "ALTER TABLE requisitions ALTER COLUMN ref_no TYPE VARCHAR(60)",
+        # Widen narrative BudgetCode columns on an already-deployed Postgres
+        # database from bounded VARCHAR to unbounded TEXT, so long but
+        # legitimate descriptions from imported work-plan workbooks (e.g.
+        # 400+ character Budget Output Descriptions) stop being rejected
+        # with a StringDataRightTruncation error. These are Postgres-only
+        # syntax and simply fail harmlessly (caught below) against SQLite,
+        # which doesn't enforce VARCHAR length limits in the first place.
+        "ALTER TABLE budget_codes ALTER COLUMN service_area TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN output_description TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN programme TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN sub_programme TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN piap_output_description TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN piap_output_indicator TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN actual_output TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN responsible_party TYPE TEXT",
+        "ALTER TABLE budget_codes ALTER COLUMN unit_of_measure TYPE VARCHAR(100)",
+        "ALTER TABLE budget_codes ALTER COLUMN funding_source TYPE VARCHAR(255)",
+        # Per-work-plan table headings — each work plan now carries its own
+        # set of the 4 table titles shown on the Work Plan & Budget view, so
+        # switching the "Annual Work Plan" dropdown switches the headings
+        # too, and editing/creating a work plan is the only place these are
+        # maintained (no separate title-management UI on each table).
+        "ALTER TABLE work_plans ADD COLUMN title_revenue_summary VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_dept_summary VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_revenue_detail VARCHAR(500)",
+        "ALTER TABLE work_plans ADD COLUMN title_main_table VARCHAR(500)",
+        # Financial Year / Quarter drawn against, and the requisitioner's
+        # typed-in name/position on the Funds Requisition Form replica.
+        "ALTER TABLE requisitions ADD COLUMN financial_year VARCHAR(20)",
+        "ALTER TABLE requisitions ADD COLUMN quarter VARCHAR(10)",
+        "ALTER TABLE requisitions ADD COLUMN requester_name VARCHAR(150)",
+        "ALTER TABLE requisitions ADD COLUMN requester_position VARCHAR(150)",
+        # Requisitioner's Mob. No. (telephone) and the free-typed Budget
+        # Output Code shown on the Funds Requisition Form replica.
+        "ALTER TABLE requisitions ADD COLUMN requester_mobile VARCHAR(40)",
+        "ALTER TABLE requisitions ADD COLUMN budget_output_code_text VARCHAR(50)",
+        # Abbreviation used to be computed on the fly from the department
+        # name and wasn't editable. It's now a stored, editable column (see
+        # the Department model) so it can be corrected by hand from the
+        # Departments page's Edit modal; _backfill_department_abbreviations()
+        # below fills it in for departments that predate this column.
+        "ALTER TABLE departments ADD COLUMN abbreviation VARCHAR(20)",
+    ]
+    with engine.connect() as conn:
+        for stmt in statements:
+            try:
+                conn.exec_driver_sql(stmt)
+                conn.commit()
+            except Exception:
+                conn.rollback()  # column already exists (or backend quirk) — ignore
+
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "UPDATE budget_codes SET piap_output_indicator = indicator "
+                "WHERE (piap_output_indicator IS NULL OR piap_output_indicator = '') "
+                "AND indicator IS NOT NULL AND indicator <> ''"
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _backfill_department_abbreviations():
+    """Fills in `abbreviation` for departments that predate the column
+    (added above) or were otherwise left blank, using the same
+    department_abbreviation() derivation the create form used to apply
+    automatically. Departments edited afterwards keep whatever value was
+    saved for them."""
+    db = SessionLocal()
+    try:
+        depts = db.query(Department).filter(
+            (Department.abbreviation == None) | (Department.abbreviation == "")
+        ).all()
+        if not depts:
+            return
+        for dep in depts:
+            dep.abbreviation = department_abbreviation(dep.name)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+_run_lightweight_migrations()
+_backfill_department_abbreviations()
+
+# --------------------------------------------------------------------------
+# Schemas
+# --------------------------------------------------------------------------
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    full_name: str
+    user_id: int
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+    role: Optional[str] = None
+
+
+class UserOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role: str
+    department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
+    is_active: bool
+    signature_url: Optional[str] = None
+    plain_password: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    role: str
+    department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    department_id: Optional[int] = None
+    position: Optional[str] = None
+    telephone: Optional[str] = None
+
+
+class DepartmentIn(BaseModel):
+    name: str
+    code: str
+    # Optional — left blank, it's auto-derived from `name` (see
+    # department_abbreviation()) just like before this was editable.
+    abbreviation: Optional[str] = None
+
+
+class DepartmentOut(BaseModel):
+    id: int
+    name: str
+    code: str
+    abbreviation: str
+    class Config:
+        from_attributes = True
+
+
+class WorkPlanIn(BaseModel):
+    financial_year: str
+    title: str
+    title_revenue_summary: Optional[str] = None
+    title_dept_summary: Optional[str] = None
+    title_revenue_detail: Optional[str] = None
+    title_main_table: Optional[str] = None
+
+
+class WorkPlanOut(WorkPlanIn):
+    id: int
+    is_active: bool
+    class Config:
+        from_attributes = True
+
+
+class BudgetCodeIn(BaseModel):
+    work_plan_id: int
+    department_id: int
+    service_area: Optional[str] = None
+    code: str
+    output_description: str
+    programme: Optional[str] = None
+    sub_programme: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    baseline_value: Union[float, int, str] = 0
+    baseline_note: Optional[str] = None
+    planned_target: Union[float, int, str] = 0
+    target_note: Optional[str] = None
+    actual_output: Optional[str] = None
+    q1_amount: Union[float, int, str] = 0
+    q2_amount: Union[float, int, str] = 0
+    q3_amount: Union[float, int, str] = 0
+    q4_amount: Union[float, int, str] = 0
+    funding_source: str = "Local Revenue"
+    responsible_party: Optional[str] = None
+
+
+class BudgetCodeUpdate(BaseModel):
+    service_area: Optional[str] = None
+    code: Optional[str] = None
+    output_description: Optional[str] = None
+    programme: Optional[str] = None
+    sub_programme: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    baseline_value: Optional[Union[float, int, str]] = None
+    baseline_note: Optional[str] = None
+    planned_target: Optional[Union[float, int, str]] = None
+    target_note: Optional[str] = None
+    actual_output: Optional[str] = None
+    q1_amount: Optional[Union[float, int, str]] = None
+    q2_amount: Optional[Union[float, int, str]] = None
+    q3_amount: Optional[Union[float, int, str]] = None
+    q4_amount: Optional[Union[float, int, str]] = None
+    funding_source: Optional[str] = None
+    responsible_party: Optional[str] = None
+
+
+class BudgetCodeOut(BaseModel):
+    id: int
+    work_plan_id: int
+    department_id: int
+    department_name: Optional[str] = None
+    # Only populated/used for the Annual Work Plan & Budget Estimates table's
+    # Department column (per Council convention of showing the PBS code
+    # alongside the name there, e.g. "090: Community Based Services").
+    # Every other screen in the system shows department_name alone — see
+    # _dept_label()'s docstring for the strict-separation rule.
+    department_code_and_name: Optional[str] = None
+    service_area: Optional[str] = None
+    code: str
+    output_description: str
+    programme: Optional[str] = None
+    sub_programme: Optional[str] = None
+    piap_output_description: Optional[str] = None
+    piap_output_indicator: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    baseline_value: float
+    baseline_note: Optional[str] = None
+    planned_target: float
+    target_note: Optional[str] = None
+    actual_output: Optional[str] = None
+    q1_amount: float
+    q2_amount: float
+    q3_amount: float
+    q4_amount: float
+    funding_source: str
+    responsible_party: Optional[str] = None
+    allocated_amount: float
+    committed_amount: float
+    available_balance: float
+
+    class Config:
+        from_attributes = True
+
+
+class BudgetCodeImportResult(BaseModel):
+    created: int
+    skipped: int
+    departments_created: int = 0
+    errors: List[str] = []
+    # Total warning count before truncation, so the UI can show "showing
+    # 30 of N" instead of silently hiding warnings past the first 30.
+    total_warnings: int = 0
+
+
+class BudgetCodeClearResult(BaseModel):
+    deleted: int
+    skipped: int = 0
+
+
+class RevenueSourceItemIn(BaseModel):
+    """A single sub row (revenue item) supplied when creating/editing a
+    Revenue Source. Any sub rows with a blank description are ignored by
+    the endpoints below, so the frontend can freely send/keep placeholder
+    rows without them being persisted."""
+    id: Optional[int] = None  # present on items coming from an existing source; ignored on write, kept for round-tripping
+    description: str
+    amount: Union[float, int, str] = 0
+
+
+class RevenueSourceItemOut(BaseModel):
+    id: int
+    description: str
+    amount: float
+
+    class Config:
+        from_attributes = True
+
+
+class RevenueSourceIn(BaseModel):
+    work_plan_id: int
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: str
+    functional_definition: Optional[str] = None
+    # Used only when `items` is empty/omitted — see RevenueSource model docstring.
+    approved_budget_amount: Union[float, int, str] = 0
+    items: Optional[List[RevenueSourceItemIn]] = None
+
+
+class RevenueSourceUpdate(BaseModel):
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: Optional[str] = None
+    functional_definition: Optional[str] = None
+    approved_budget_amount: Optional[Union[float, int, str]] = None
+    # When provided (even as an empty list), this REPLACES all existing sub
+    # rows for the revenue source. Omit the field entirely to leave the
+    # current sub rows untouched.
+    items: Optional[List[RevenueSourceItemIn]] = None
+
+
+class RevenueSourceOut(BaseModel):
+    id: int
+    work_plan_id: int
+    pbs_fund_code: Optional[str] = None
+    source_of_financing_name: str
+    functional_definition: Optional[str] = None
+    # Auto-derived: equals category_total whenever sub rows exist, otherwise
+    # falls back to the manually-entered amount. Kept alongside
+    # category_total (identical value) so the Summary of Sources of Revenue
+    # table on the frontend — which reads approved_budget_amount — updates
+    # automatically without any frontend changes.
+    approved_budget_amount: float
+    category_total: float
+    items: List[RevenueSourceItemOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class RevenueSourceImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: List[str] = []
+
+
+class RevenueSourceClearResult(BaseModel):
+    deleted: int
+
+
+class ActivityIn(BaseModel):
+    budget_code_id: int
+    name: str
+    quarter: str = "Q1"
+
+
+class ActivityOut(ActivityIn):
+    id: int
+    is_active: bool
+    class Config:
+        from_attributes = True
+
+
+class RequisitionLineItemIn(BaseModel):
+    item_no: int
+    description: str
+    units: Optional[str] = None
+    qty: Optional[float] = None
+    rate: Optional[float] = None
+    amount: float = 0
+
+
+class VoucherDataIn(BaseModel):
+    voucher_no: Optional[str] = None
+    budget_output_code: Optional[str] = None
+    pv_reference_no: Optional[str] = None
+    dr_to: Optional[str] = None
+    cheque_no: Optional[str] = None
+    address: Optional[str] = None
+    voucher_date: Optional[str] = None
+    ledger_folio: Optional[str] = None
+    charge_date: Optional[str] = None
+    authority: Optional[str] = None
+    approved_vote: Optional[str] = None
+    account_no: Optional[str] = None
+    approved_estimate: Optional[str] = None
+    cheque_instruction_no: Optional[str] = None
+    payment_day: Optional[str] = None
+    payment_month_year: Optional[str] = None
+    entered_vote_book_date: Optional[str] = None
+    verified_by_date: Optional[str] = None
+    passed_payment_date: Optional[str] = None
+    inter_dept_clearance: Optional[str] = None
+    program_of_estimate: Optional[str] = None
+    sub_program: Optional[str] = None
+    item: Optional[str] = None
+
+
+class RequisitionIn(BaseModel):
+    department_id: Optional[int] = None
+    budget_code_id: Optional[int] = None
+    activity_id: Optional[int] = None
+    subject: Optional[str] = None
+    financial_year: Optional[str] = None
+    quarter: Optional[str] = None
+    requester_name: Optional[str] = None
+    requester_position: Optional[str] = None
+    requester_mobile: Optional[str] = None
+    budget_output_code_text: Optional[str] = None
+    payment_voucher_number: Optional[str] = None
+    line_items: List[RequisitionLineItemIn]
+    voucher: Optional[VoucherDataIn] = None
+
+
+class ApprovalActionIn(BaseModel):
+    action: str  # approve / reject / return
+    comments: Optional[str] = None
+
+
+class AccountabilityIn(BaseModel):
+    status: str  # verified / flagged / pending
+    remarks: Optional[str] = None
+
+
+# --------------------------------------------------------------------------
+# Auth helpers
+# --------------------------------------------------------------------------
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = dt.datetime.utcnow() + dt.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if token is None:
+        raise credentials_exception
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if user is None or not user.is_active:
+        raise credentials_exception
+    return user
+
+
+def require_roles(*roles):
+    def checker(user: User = Depends(get_current_user)):
+        if user.role not in roles:
+            raise HTTPException(status_code=403, detail="You do not have permission to perform this action")
+        return user
+    return checker
+
+
+def log_action(db: Session, user_id: Optional[int], action: str, details: str = ""):
+    entry = AuditLog(user_id=user_id, action=action, details=details)
+    db.add(entry)
+    db.commit()
+
+
+def notify(db: Session, user_id: int, message: str, category: str = "info", requisition_id: Optional[int] = None):
+    n = Notification(user_id=user_id, message=message, category=category, link_requisition_id=requisition_id)
+    db.add(n)
+    db.commit()
+
+
+def notify_role(db: Session, role: str, message: str, category: str = "info", requisition_id: Optional[int] = None):
+    users = db.query(User).filter(User.role == role, User.is_active == True).all()
+    for u in users:
+        notify(db, u.id, message, category, requisition_id)
+
+
+# --------------------------------------------------------------------------
+# Backblaze B2 storage helpers
+# --------------------------------------------------------------------------
+
+async def upload_document_to_b2(file: UploadFile, requisition_id: int) -> str:
+    try:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        key = f"{B2_DOCUMENTS_FOLDER}/{requisition_id}/{uuid.uuid4().hex}{ext}"
+        file_content = await file.read()
+        b2_client.put_object(
+            Bucket=B2_BUCKET_NAME,
+            Key=key,
+            Body=file_content,
+            ContentType=file.content_type or "application/octet-stream",
+        )
+        logger.info(f"Document uploaded to B2: {key}")
+        return key
+    except Exception as e:
+        logger.error(f"Error uploading document to B2: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+
+async def upload_signature_to_b2(file: UploadFile, user_id: int) -> str:
+    try:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        key = f"{B2_SIGNATURES_FOLDER}/{user_id}/{uuid.uuid4().hex}{ext}"
+        file_content = await file.read()
+        b2_client.put_object(
+            Bucket=B2_BUCKET_NAME,
+            Key=key,
+            Body=file_content,
+            ContentType=file.content_type or "image/png",
+        )
+        logger.info(f"Signature uploaded to B2: {key}")
+        return key
+    except Exception as e:
+        logger.error(f"Error uploading signature to B2: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading signature: {str(e)}")
+
+
+def delete_document_from_b2(key: str):
+    try:
+        b2_client.delete_object(Bucket=B2_BUCKET_NAME, Key=key)
+        logger.info(f"Document deleted from B2: {key}")
+    except Exception as e:
+        logger.warning(f"Error deleting document from B2: {e}")
+
+
+# --------------------------------------------------------------------------
+# App
+# --------------------------------------------------------------------------
+
+app = FastAPI(title="KTC-IPFMS API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+def seed_data():
+    db = SessionLocal()
+    try:
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@karugutu.town.go.ug")
+        admin_password = os.getenv("ADMIN_PASSWORD", "Admin@2026")
+
+        # Departments are never auto-generated by the system — they are only
+        # ever created when a user explicitly adds one (Departments page, or
+        # the "+ New Department" action). The seeded admin account is created
+        # with no department assigned; an administrator can assign one later
+        # once real departments have been added.
+        existing_admin = db.query(User).filter(User.email == admin_email).first()
+        if not existing_admin:
+            admin = User(
+                full_name="System Administrator",
+                email=admin_email,
+                hashed_password=hash_password(admin_password),
+                plain_password=admin_password,
+                role="admin",
+                position="System Administrator",
+                department_id=None,
+            )
+            db.add(admin)
+            try:
+                db.commit()
+                log_action(db, None, "system.seed", f"Seeded initial admin account {admin_email}")
+            except IntegrityError:
+                db.rollback()
+                logger.info("Admin user already existed (created concurrently); skipping seed insert.")
+    except Exception as exc:  # noqa: BLE001 - never let seeding crash startup
+        db.rollback()
+        logger.warning("Startup seeding skipped due to error: %s", exc)
+    finally:
+        db.close()
+
+
+# ---------------------------- Auth ----------------------------------------
+
+@app.post("/api/auth/login", response_model=Token)
+def login(payload: LoginIn, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="This account has been deactivated")
+    # System Administrator accounts are not limited to the "System
+    # Administrator" option on the role selector — an admin may sign in
+    # picking any role in the dropdown without it being rejected as a
+    # mismatch. Every other account must still select its own real role.
+    if payload.role and payload.role != user.role and user.role != "admin":
+        raise HTTPException(
+            status_code=401,
+            detail="The role you selected does not match this account. Please choose the correct role and try again."
+        )
+    token = create_access_token({"sub": str(user.id), "role": user.role})
+    log_action(db, user.id, "auth.login", f"{user.email} logged in")
+    return Token(access_token=token, role=user.role, full_name=user.full_name, user_id=user.id)
+
+
+@app.get("/api/auth/me", response_model=UserOut)
+def me(user: User = Depends(get_current_user)):
+    return user
+
+
+# ---------------------------- Users ----------------------------------------
+
+@app.get("/api/users", response_model=List[UserOut])
+def list_users(db: Session = Depends(get_db), user: User = Depends(require_roles("admin"))):
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+
+@app.post("/api/users", response_model=UserOut)
+def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    if payload.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role supplied")
+    if payload.role == "hod" and not payload.department_id:
+        # A Head of Department account without a department assigned is
+        # invisible to the department-scoped approvals queue below (it can
+        # never match any requisition), which silently locks the HOD out of
+        # everything they're supposed to approve. Refuse to create it.
+        raise HTTPException(status_code=400, detail="Please select a Department for this Head of Department account")
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="A user with this email already exists")
+    new_user = User(
+        full_name=payload.full_name,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        plain_password=payload.password,
+        role=payload.role,
+        department_id=payload.department_id,
+        position=payload.position,
+        telephone=payload.telephone,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    log_action(db, admin.id, "user.create", f"Created user {new_user.email} ({new_user.role})")
+    return new_user
+
+
+@app.patch("/api/users/{user_id}/toggle-active", response_model=UserOut)
+def toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    target.is_active = not target.is_active
+    db.commit()
+    db.refresh(target)
+    log_action(db, admin.id, "user.toggle_active", f"{target.email} active={target.is_active}")
+    return target
+
+
+@app.patch("/api/users/{user_id}", response_model=UserOut)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = payload.dict(exclude_unset=True)
+    if "role" in data and data["role"] and data["role"] not in ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role supplied")
+    if data.get("email") and data["email"] != target.email:
+        if db.query(User).filter(User.email == data["email"]).first():
+            raise HTTPException(status_code=400, detail="A user with this email already exists")
+    # Same guard as user creation: a Head of Department account must always
+    # have a department, or the department-scoped approvals queue below
+    # will never match anything for them.
+    effective_role = data.get("role", target.role)
+    effective_department_id = data["department_id"] if "department_id" in data else target.department_id
+    if effective_role == "hod" and not effective_department_id:
+        raise HTTPException(status_code=400, detail="Please select a Department for this Head of Department account")
+    password = data.pop("password", None)
+    for field, value in data.items():
+        setattr(target, field, value)
+    if password:
+        target.hashed_password = hash_password(password)
+        target.plain_password = password
+    db.commit()
+    db.refresh(target)
+    log_action(db, admin.id, "user.update", f"Updated user {target.email}")
+    return target
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    if db.query(Requisition).filter(Requisition.requester_id == user_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a user who has requisitions on record — disable the account instead")
+    db.delete(target)
+    db.commit()
+    log_action(db, admin.id, "user.delete", f"Deleted user {target.email}")
+    return {"ok": True}
+
+
+# ---------------------------- User Signatures -------------------------------
+
+_ALLOWED_SIGNATURE_EXT = {".png", ".jpg", ".jpeg"}
+
+
+@app.post("/api/users/me/signature", response_model=UserOut)
+async def upload_my_signature(file: UploadFile = File(...), db: Session = Depends(get_db),
+                               user: User = Depends(get_current_user)):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_SIGNATURE_EXT:
+        raise HTTPException(status_code=400, detail="Only PNG and JPG images are allowed for a signature")
+
+    old_path = user.signature_path
+    new_key = await upload_signature_to_b2(file, user.id)
+    user.signature_path = new_key
+    db.commit()
+    db.refresh(user)
+
+    if old_path:
+        delete_document_from_b2(old_path)
+
+    log_action(db, user.id, "user.signature_upload", f"{user.email} uploaded a new signature")
+    return user
+
+
+@app.delete("/api/users/me/signature", response_model=UserOut)
+def delete_my_signature(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.signature_path:
+        old_path = user.signature_path
+        user.signature_path = None
+        db.commit()
+        db.refresh(user)
+        delete_document_from_b2(old_path)
+        log_action(db, user.id, "user.signature_remove", f"{user.email} removed their signature")
+    return user
+
+
+# Signature management for a specific user, used by the admin "New/Edit
+# User" modal (the signature upload control now lives there instead of on
+# each user's own My Settings screen).
+@app.post("/api/users/{user_id}/signature", response_model=UserOut)
+async def upload_user_signature(user_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
+                                 admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_SIGNATURE_EXT:
+        raise HTTPException(status_code=400, detail="Only PNG and JPG images are allowed for a signature")
+
+    old_path = target.signature_path
+    new_key = await upload_signature_to_b2(file, target.id)
+    target.signature_path = new_key
+    db.commit()
+    db.refresh(target)
+
+    if old_path:
+        delete_document_from_b2(old_path)
+
+    log_action(db, admin.id, "user.signature_upload", f"Admin uploaded a signature for {target.email}")
+    return target
+
+
+@app.delete("/api/users/{user_id}/signature", response_model=UserOut)
+def delete_user_signature(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.signature_path:
+        old_path = target.signature_path
+        target.signature_path = None
+        db.commit()
+        db.refresh(target)
+        delete_document_from_b2(old_path)
+        log_action(db, admin.id, "user.signature_remove", f"Admin removed the signature for {target.email}")
+    return target
+
+
+# ---------------------------- Departments -----------------------------------
+
+@app.get("/api/departments", response_model=List[DepartmentOut])
+def list_departments(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return db.query(Department).order_by(Department.name).all()
+
+
+@app.post("/api/departments", response_model=DepartmentOut)
+def create_department(payload: DepartmentIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    if db.query(Department).filter(Department.code == payload.code).first():
+        raise HTTPException(status_code=400, detail="Department code already exists")
+    if db.query(Department).filter(Department.name == payload.name).first():
+        raise HTTPException(status_code=400, detail="Department name already exists")
+    dep = Department(
+        name=payload.name,
+        code=payload.code,
+        abbreviation=(payload.abbreviation or "").strip() or department_abbreviation(payload.name),
+    )
+    db.add(dep)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Department name or code already exists")
+    db.refresh(dep)
+    log_action(db, admin.id, "department.create", dep.name)
+    _invalidate_budget_code_caches()
+    return dep
+
+
+@app.patch("/api/departments/{dep_id}", response_model=DepartmentOut)
+def update_department(dep_id: int, payload: DepartmentIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    dep = db.query(Department).filter(Department.id == dep_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if db.query(Department).filter(Department.code == payload.code, Department.id != dep_id).first():
+        raise HTTPException(status_code=400, detail="Department code already exists")
+    if db.query(Department).filter(Department.name == payload.name, Department.id != dep_id).first():
+        raise HTTPException(status_code=400, detail="Department name already exists")
+    dep.name = payload.name
+    dep.code = payload.code
+    dep.abbreviation = (payload.abbreviation or "").strip() or department_abbreviation(payload.name)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Department name or code already exists")
+    db.refresh(dep)
+    log_action(db, admin.id, "department.update", dep.name)
+    _invalidate_budget_code_caches()
+    return dep
+
+
+@app.delete("/api/departments/{dep_id}")
+def delete_department(dep_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    dep = db.query(Department).filter(Department.id == dep_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if db.query(User).filter(User.department_id == dep_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a department that still has users assigned to it")
+    if db.query(BudgetCode).filter(BudgetCode.department_id == dep_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a department that still has budget codes assigned to it")
+    db.delete(dep)
+    db.commit()
+    log_action(db, admin.id, "department.delete", dep.name)
+    _invalidate_budget_code_caches()
+    return {"ok": True}
+
+
+# ---------------------------- Work Plans ------------------------------------
+
+def _default_table_titles(financial_year: str) -> dict:
+    """Fallback headings for the 4 Work Plan & Budget tables, used whenever a
+    work plan is created/updated without explicit text for one of them —
+    keeps the tables from ever showing a blank heading."""
+    fy = (financial_year or "").strip()
+    suffix = f" FOR FY {fy}" if fy else ""
+    return {
+        "title_revenue_summary": f"APPROVED SUMMARY OF THE COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES{suffix}",
+        "title_dept_summary": f"APPROVED DEPARTMENTAL SUMMARY OF THE COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES{suffix}",
+        "title_revenue_detail": f"APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE ESTIMATES{suffix}",
+        "title_main_table": f"APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES{suffix}",
     }
-  },
-  {
-    key: 'lr',
-    pbs_fund_code: '002',
-    source_of_financing_name: 'Locally Raised Revenues (LR)',
-    functional_definition: 'Internally collected fees, levies, licenses, and operational fines.',
-    match: (r) => {
-      const code = String(r.pbs_fund_code || '').trim();
-      const name = String(r.source_of_financing_name || '').toLowerCase();
-      return code === '002' || name.includes('locally raised') || name.includes('local revenue') || /\blr\b/.test(name);
+
+
+@app.get("/api/workplans", response_model=List[WorkPlanOut])
+def list_workplans(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Ordered oldest -> newest (by creation order) so the older annual work
+    # plan(s) appear at the top of the dropdown and the most recently added
+    # work plan appears at the bottom.
+    return db.query(WorkPlan).order_by(WorkPlan.id.asc()).all()
+
+
+@app.post("/api/workplans", response_model=WorkPlanOut)
+def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    data = payload.dict()
+    defaults = _default_table_titles(payload.financial_year)
+    for field, default_text in defaults.items():
+        if not (data.get(field) or "").strip():
+            data[field] = default_text
+    wp = WorkPlan(**data)
+    db.add(wp)
+    db.commit()
+    db.refresh(wp)
+    log_action(db, admin.id, "workplan.create", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
+    return wp
+
+
+@app.patch("/api/workplans/{wp_id}", response_model=WorkPlanOut)
+def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    defaults = _default_table_titles(payload.financial_year)
+    wp.financial_year = payload.financial_year
+    wp.title = payload.title
+    wp.title_revenue_summary = (payload.title_revenue_summary or "").strip() or defaults["title_revenue_summary"]
+    wp.title_dept_summary = (payload.title_dept_summary or "").strip() or defaults["title_dept_summary"]
+    wp.title_revenue_detail = (payload.title_revenue_detail or "").strip() or defaults["title_revenue_detail"]
+    wp.title_main_table = (payload.title_main_table or "").strip() or defaults["title_main_table"]
+    db.commit()
+    db.refresh(wp)
+    log_action(db, admin.id, "workplan.update", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
+    return wp
+
+
+@app.delete("/api/workplans/{wp_id}")
+def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    if db.query(BudgetCode).filter(BudgetCode.work_plan_id == wp_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a work plan that still has budget codes attached to it")
+    db.delete(wp)
+    db.commit()
+    log_action(db, admin.id, "workplan.delete", f"{wp.title} ({wp.financial_year})")
+    _invalidate_budget_code_caches()
+    return {"ok": True}
+
+
+def _normalize_revenue_source_fields(pbs_fund_code, source_of_financing_name, functional_definition):
+    """A past frontend bug saved the internal category shorthand ('gou',
+    'lr', 'mdp') as the Revenue Source name instead of resolving it to the
+    full Council-approved wording (e.g. 'Central Government Transfers
+    (GoU)'). Any record — old or new — whose name is exactly one of those
+    shorthands is displayed with the correct full label instead."""
+    key = (source_of_financing_name or "").strip().lower()
+    cat = _REVENUE_KEY_TO_FULL.get(key)
+    if cat:
+        return (
+            pbs_fund_code or cat["pbs_fund_code"],
+            cat["source_of_financing_name"],
+            functional_definition or cat["functional_definition"],
+        )
+    return pbs_fund_code, source_of_financing_name, functional_definition
+
+
+def revenue_source_to_out(r: RevenueSource) -> RevenueSourceOut:
+    items_out = [
+        RevenueSourceItemOut(id=it.id, description=it.description, amount=parse_amount(it.amount))
+        for it in (r.items or [])
+    ]
+    if items_out:
+        total = sum(it.amount for it in items_out)
+    else:
+        total = parse_amount(r.approved_budget_amount)
+    pbs_fund_code, source_name, func_def = _normalize_revenue_source_fields(
+        r.pbs_fund_code, r.source_of_financing_name, r.functional_definition
+    )
+    return RevenueSourceOut(
+        id=r.id, work_plan_id=r.work_plan_id, pbs_fund_code=pbs_fund_code,
+        source_of_financing_name=source_name,
+        functional_definition=func_def,
+        approved_budget_amount=total,
+        category_total=total,
+        items=items_out,
+    )
+
+
+def _apply_revenue_items(db: Session, r: RevenueSource, items_in: List[RevenueSourceItemIn]):
+    """Replace all sub rows on a revenue source with the given list. Rows
+    with a blank description are dropped rather than persisted, so the
+    frontend can send placeholder/incomplete rows freely."""
+    db.query(RevenueSourceItem).filter(RevenueSourceItem.revenue_source_id == r.id).delete()
+    for it in items_in or []:
+        desc = (it.description or "").strip()
+        if not desc:
+            continue
+        db.add(RevenueSourceItem(revenue_source_id=r.id, description=desc, amount=parse_amount(it.amount)))
+
+
+@app.get("/api/revenue-sources", response_model=List[RevenueSourceOut])
+def list_revenue_sources(work_plan_id: Optional[int] = None, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    cache_key = f"revenue_sources:{work_plan_id}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    q = db.query(RevenueSource)
+    if work_plan_id:
+        q = q.filter(RevenueSource.work_plan_id == work_plan_id)
+    # Ordered by id (insertion order) rather than PBS fund code, so rows
+    # imported from Excel are displayed in the exact same order they
+    # appeared in the workbook, instead of being re-sorted by fund code.
+    sources = q.order_by(RevenueSource.id.asc()).all()
+    result = [revenue_source_to_out(r) for r in sources]
+    _cache_set(cache_key, result)
+    return result
+
+
+@app.post("/api/revenue-sources", response_model=RevenueSourceOut)
+def create_revenue_source(payload: RevenueSourceIn, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    dup_key = _revenue_source_dup_key(payload.pbs_fund_code, payload.source_of_financing_name)
+    if dup_key and dup_key in _existing_revenue_source_keys(db, payload.work_plan_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot add this entry — a revenue source named '{payload.source_of_financing_name}'"
+                   f"{f' under PBS Fund Code {payload.pbs_fund_code}' if payload.pbs_fund_code else ''}"
+                   f" already exists in this work plan.",
+        )
+
+    norm_fund_code, norm_source_name, norm_func_def = _normalize_revenue_source_fields(
+        payload.pbs_fund_code, payload.source_of_financing_name, payload.functional_definition
+    )
+    r = RevenueSource(
+        work_plan_id=payload.work_plan_id,
+        pbs_fund_code=norm_fund_code,
+        source_of_financing_name=norm_source_name,
+        functional_definition=norm_func_def,
+        approved_budget_amount=parse_amount(payload.approved_budget_amount),
+    )
+    db.add(r)
+    db.flush()  # get r.id before adding sub rows
+    _apply_revenue_items(db, r, payload.items or [])
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_source.create", r.source_of_financing_name)
+    _invalidate_revenue_source_caches()
+    return revenue_source_to_out(r)
+
+
+@app.delete("/api/revenue-sources/clear", response_model=RevenueSourceClearResult)
+def clear_revenue_sources(work_plan_id: int, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    """Delete every revenue source (and their sub rows, via cascade) for a
+    given work plan in one go — powers the "Clear" button on the Revenue
+    Source by Category table so an administrator can wipe the table clean
+    before re-entering or re-importing data, instead of removing each
+    category one at a time."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+    sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == work_plan_id).all()
+    deleted = len(sources)
+    for r in sources:
+        db.delete(r)  # cascade="all, delete-orphan" on RevenueSource.items removes sub rows too
+    db.commit()
+    log_action(db, admin.id, "revenue_source.clear_all",
+               f"Cleared {deleted} revenue source(s) from work plan #{work_plan_id}")
+    _invalidate_revenue_source_caches()
+    return RevenueSourceClearResult(deleted=deleted)
+
+
+@app.patch("/api/revenue-sources/{rev_id}", response_model=RevenueSourceOut)
+def update_revenue_source(rev_id: int, payload: RevenueSourceUpdate, db: Session = Depends(get_db),
+                           admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueSource).filter(RevenueSource.id == rev_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revenue source not found")
+    data = payload.dict(exclude_unset=True)
+    items_data = data.pop("items", None)  # None = leave sub rows untouched; [] or [...] = replace them
+    if "approved_budget_amount" in data:
+        data["approved_budget_amount"] = parse_amount(data["approved_budget_amount"])
+    if "source_of_financing_name" in data:
+        norm_fund_code, norm_source_name, norm_func_def = _normalize_revenue_source_fields(
+            data.get("pbs_fund_code", r.pbs_fund_code),
+            data.get("source_of_financing_name"),
+            data.get("functional_definition", r.functional_definition),
+        )
+        data["pbs_fund_code"] = norm_fund_code
+        data["source_of_financing_name"] = norm_source_name
+        data["functional_definition"] = norm_func_def
+    for field, value in data.items():
+        setattr(r, field, value)
+    if items_data is not None:
+        items_in = [RevenueSourceItemIn(**it) for it in items_data]
+        _apply_revenue_items(db, r, items_in)
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_source.update", r.source_of_financing_name)
+    _invalidate_revenue_source_caches()
+    return revenue_source_to_out(r)
+
+
+@app.delete("/api/revenue-sources/{rev_id}")
+def delete_revenue_source(rev_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueSource).filter(RevenueSource.id == rev_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revenue source not found")
+    name = r.source_of_financing_name
+    db.delete(r)  # cascade="all, delete-orphan" on RevenueSource.items removes its sub rows too
+    db.commit()
+    log_action(db, admin.id, "revenue_source.delete", name)
+    _invalidate_revenue_source_caches()
+    return {"ok": True}
+
+
+@app.post("/api/revenue-sources/{rev_id}/items", response_model=RevenueSourceOut)
+def add_revenue_source_item(rev_id: int, payload: RevenueSourceItemIn, db: Session = Depends(get_db),
+                             admin: User = Depends(require_roles("admin"))):
+    """Add a single sub row (revenue item) to an existing revenue source
+    category. The Category Total (and therefore the Approved Budget Amount
+    shown in the Summary of Sources of Revenue) is recalculated
+    automatically, since it is derived from the sub rows on read."""
+    r = db.query(RevenueSource).filter(RevenueSource.id == rev_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revenue source not found")
+    desc = (payload.description or "").strip()
+    if not desc:
+        raise HTTPException(status_code=400, detail="Please provide a description for the revenue item")
+    item = RevenueSourceItem(revenue_source_id=r.id, description=desc, amount=parse_amount(payload.amount))
+    db.add(item)
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_source_item.create", f"{desc} on {r.source_of_financing_name}")
+    _invalidate_revenue_source_caches()
+    return revenue_source_to_out(r)
+
+
+@app.delete("/api/revenue-source-items/{item_id}")
+def delete_revenue_source_item(item_id: int, db: Session = Depends(get_db),
+                                admin: User = Depends(require_roles("admin"))):
+    """Remove a single sub row. The parent revenue source's Category Total
+    (and the Summary of Sources of Revenue) updates automatically."""
+    item = db.query(RevenueSourceItem).filter(RevenueSourceItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Revenue item not found")
+    rev_id = item.revenue_source_id
+    parent_name = item.revenue_source.source_of_financing_name if item.revenue_source else None
+    db.delete(item)
+    db.commit()
+    log_action(db, admin.id, "revenue_source_item.delete", f"Removed sub row from {parent_name or ('revenue source #' + str(rev_id))}")
+    _invalidate_revenue_source_caches()
+    return {"ok": True}
+
+
+_REVENUE_IMPORT_COLUMN_ALIASES = {
+    "pbs fund code": "pbs_fund_code",
+    "fund code": "pbs_fund_code",
+    "source of financing name": "source_of_financing_name",
+    "source of financing": "source_of_financing_name",
+    "source of funding": "source_of_financing_name",
+    "financing source": "source_of_financing_name",
+    "functional definition in pbs": "functional_definition",
+    "functional definition in pbs (category & item details)": "functional_definition",
+    "functional definition": "functional_definition",
+    "revenue item": "item_description",
+    "revenue item (functional definition)": "item_description",
+    "sub row": "item_description",
+    "approved estimate": "item_amount",
+    "approved estimate (ugx)": "item_amount",
+    "approved budget amount": "approved_budget_amount",
+    "approved budget amount (ugx)": "approved_budget_amount",
+    "approved budget": "approved_budget_amount",
+    "subtotal approved budget estimates by revenue source (ugx)": "item_amount",
+    "total approved budget estimate by revenue source category (ugx)": "approved_budget_amount",
+    "amount": "approved_budget_amount",
+    # NEW — matches this workbook's actual column headers (no "Subtotal"/"Total" prefix)
+    "approved budget estimates by revenue source (ugx)": "item_amount",
+    "approved budget estimate by revenue source category (ugx)": "approved_budget_amount",
+}
+
+
+@app.post("/api/revenue-sources/import", response_model=RevenueSourceImportResult)
+async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...),
+                                  db: Session = Depends(get_db),
+                                  admin: User = Depends(require_roles("admin"))):
+    """Bulk-create Revenue Source rows (and, where present, their sub rows)
+    from an uploaded Excel workbook, so revenue sources prepared offline can
+    be imported directly instead of being typed in one at a time via the
+    Add Revenue Sources form.
+
+    Two supported layouts:
+      - A flat sheet with one row per source and an "Approved Budget
+        Amount" column (no sub rows) — behaves as before.
+      - A "Revenue Entry Table"-style sheet where the same PBS Fund
+        Code / Source of Financing Name repeats across consecutive rows,
+        each row carrying one "Revenue Item" + "Approved Estimate". These
+        are grouped into a single revenue source with one sub row per
+        distinct Revenue Item row; the source's own Approved Budget Amount
+        column is then ignored in favour of the sub-row total.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed."
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    ws = wb.active
+    all_rows = list(ws.iter_rows(values_only=True))
+
+    if not all_rows:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded workbook appears to be empty"
+        )
+
+    header_row_idx = None
+    col_map = {}
+
+    for i, row in enumerate(all_rows[:10]):
+        candidate = [_normalize_header_key(h) for h in row]
+        candidate_map = {
+            idx: _REVENUE_IMPORT_COLUMN_ALIASES[h]
+            for idx, h in enumerate(candidate)
+            if h in _REVENUE_IMPORT_COLUMN_ALIASES
+        }
+
+        if len(candidate_map) >= 2:
+            header_row_idx = i
+            col_map = candidate_map
+            break
+
+    if header_row_idx is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not find a header row with recognisable columns (e.g. 'Source of Financing Name') in the first 10 rows of the sheet"
+        )
+
+    rows = all_rows[header_row_idx:]
+
+    if "source_of_financing_name" not in col_map.values():
+        raise HTTPException(
+            status_code=400,
+            detail="The workbook must at least include a 'Source of Financing Name' column"
+        )
+
+    has_sub_row_columns = "item_description" in col_map.values()
+
+    def _text(v):
+        return str(v).strip() if v is not None else None
+
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    grouped: dict = {}
+    order: List[tuple] = []
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+
+        data = {}
+        for idx, field in col_map.items():
+            data[field] = row[idx] if idx < len(row) else None
+
+        source_name = _text(data.get("source_of_financing_name"))
+
+        if not source_name:
+            continuation_text = (
+                _text(data.get("item_description"))
+                or _text(data.get("functional_definition"))
+            )
+
+            if order and continuation_text:
+                # Genuine continuation row of the group above it (merged
+                # "Source of Financing Name" cell in the source sheet).
+                key = order[-1]
+            else:
+                # FIX: no longer skipped. A row with data but no source
+                # name and nothing to tie it to the previous group is
+                # still imported — as its own standalone revenue source —
+                # so every row in the workbook ends up in the system,
+                # instead of quietly disappearing from the import.
+                fund_code = _text(data.get("pbs_fund_code"))
+                key = (
+                    fund_code or "",
+                    f"__row{row_idx}__",
+                )
+                grouped[key] = {
+                    "pbs_fund_code": fund_code,
+                    "source_of_financing_name": continuation_text or "Unspecified",
+                    "functional_definition": _text(data.get("functional_definition")),
+                    "approved_budget_amount": data.get("approved_budget_amount"),
+                    "items": [],
+                }
+                order.append(key)
+                errors.append(
+                    f"Row {row_idx}: Source of Financing Name was blank — imported as 'Unspecified'"
+                    if not continuation_text else
+                    f"Row {row_idx}: Source of Financing Name was blank — imported as its own row"
+                )
+
+        else:
+            if _normalize_dept_name(source_name) in _SUBTOTAL_MARKERS:
+                continue
+
+            fund_code = _text(data.get("pbs_fund_code"))
+            key = (fund_code or "", _normalize_dept_name(source_name))
+
+            if key not in grouped:
+                grouped[key] = {
+                    "pbs_fund_code": fund_code,
+                    "source_of_financing_name": source_name,
+                    "functional_definition": _text(data.get("functional_definition")),
+                    "approved_budget_amount": data.get("approved_budget_amount"),
+                    "items": [],
+                }
+                order.append(key)
+
+        entry = grouped[key]
+
+        item_desc = _text(data.get("item_description"))
+        if not item_desc and not source_name:
+            item_desc = _text(data.get("functional_definition"))
+
+        if item_desc:
+            amt, ok, original = parse_amount_verbose(data.get("item_amount"))
+
+            if not ok:
+                errors.append(
+                    f"Row {row_idx}: could not read '{original}' as a number for Approved Estimate — treated as 0"
+                )
+
+            entry["items"].append(
+                {
+                    "description": item_desc,
+                    "amount": amt,
+                }
+            )
+
+    # Tracks every (PBS Fund Code, Source of Financing Name) pair already on
+    # file for this work plan (seeded from the database, then grown as rows
+    # are imported) so a source already present — or repeated twice within
+    # the same workbook — is rejected instead of creating a duplicate entry.
+    existing_revenue_source_keys = _existing_revenue_source_keys(db, work_plan_id)
+
+    for key in order:
+        entry = grouped[key]
+
+        # Reject this group outright if it's already in the database (or
+        # was already imported earlier in this same workbook) — same rule
+        # the manual "Add Revenue Source" form enforces, applied here to
+        # every imported row/group.
+        dup_key = _revenue_source_dup_key(entry["pbs_fund_code"], entry["source_of_financing_name"])
+        if dup_key and dup_key in existing_revenue_source_keys:
+            skipped += 1
+            errors.append(
+                f"'{entry['source_of_financing_name']}' skipped — already exists in this work plan"
+            )
+            continue
+
+        amount, ok, original = parse_amount_verbose(
+            entry.get("approved_budget_amount")
+        )
+
+        if not ok:
+            errors.append(
+                f"Could not read '{original}' as a number for Approved Budget Amount on '{entry['source_of_financing_name']}' — treated as 0"
+            )
+
+        r = RevenueSource(
+            work_plan_id=work_plan_id,
+            pbs_fund_code=entry["pbs_fund_code"],
+            source_of_financing_name=entry["source_of_financing_name"],
+            functional_definition=entry["functional_definition"],
+            approved_budget_amount=amount,
+        )
+
+        db.add(r)
+        db.flush()
+
+        for it in entry["items"]:
+            db.add(
+                RevenueSourceItem(
+                    revenue_source_id=r.id,
+                    description=it["description"],
+                    amount=it["amount"],
+                )
+            )
+
+        created += 1
+        if dup_key:
+            existing_revenue_source_keys.add(dup_key)
+
+    db.commit()
+
+    log_action(
+        db,
+        admin.id,
+        "revenue_source.import",
+        f"Imported {created} revenue source(s) into work plan #{work_plan_id} from {file.filename} ({skipped} skipped)",
+    )
+
+    _invalidate_revenue_source_caches()
+
+    return RevenueSourceImportResult(
+        created=created,
+        skipped=skipped,
+        errors=errors[:30],
+    )
+
+# ---------------------------- Budget Codes ----------------------------------
+
+def _dept_label(dept: Optional["Department"]) -> Optional[str]:
+    """Renders a department using just its name. Strict separation of
+    concern: the PBS department code is a distinct identifier from the
+    department name and is intentionally omitted everywhere a department is
+    shown to the user (Departments page's own Department column, user
+    records, requisitions, dept-output charts, etc).
+
+    The exceptions are the Annual Work Plan & Budget Estimates table's
+    Department column and the Department Budget Summary table (both on
+    screen and in the PDF report), plus every dropdown that lists
+    departments (Work Plan filter, Budget Code form, Requisition form, User
+    form) — those all show "<code>: <name>" (e.g. "090: Community Based
+    Services") via _dept_code_and_name() below.
+    """
+    if not dept:
+        return None
+    return dept.name
+
+
+def _dept_code_and_name(dept: Optional["Department"]) -> Optional[str]:
+    """Renders "<code>: <name>" (e.g. "090: Community Based Services") for
+    the Annual Work Plan & Budget Estimates table's Department column, the
+    Department Budget Summary table, and department dropdowns. Do not use
+    this for the Departments page's own Department column — that shows
+    department name alone via _dept_label()."""
+    if not dept:
+        return None
+    if not dept.code:
+        return dept.name
+    return f"{dept.code}: {dept.name}"
+
+
+def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = None) -> BudgetCodeOut:
+    allocated = bc.allocated_amount
+    committed = committed_override if committed_override is not None else bc.committed_amount
+    return BudgetCodeOut(
+        id=bc.id, work_plan_id=bc.work_plan_id, department_id=bc.department_id,
+        department_name=_dept_label(bc.department),
+        department_code_and_name=_dept_code_and_name(bc.department),
+        service_area=bc.service_area,
+        code=bc.code, output_description=bc.output_description, programme=bc.programme,
+        sub_programme=bc.sub_programme,
+        piap_output_description=bc.piap_output_description,
+        piap_output_indicator=bc.piap_output_indicator,
+        unit_of_measure=bc.unit_of_measure,
+        baseline_value=parse_amount(bc.baseline_value), baseline_note=bc.baseline_note,
+        planned_target=parse_amount(bc.planned_target), target_note=bc.target_note,
+        actual_output=bc.actual_output,
+        q1_amount=parse_amount(bc.q1_amount), q2_amount=parse_amount(bc.q2_amount),
+        q3_amount=parse_amount(bc.q3_amount), q4_amount=parse_amount(bc.q4_amount),
+        funding_source=bc.funding_source,
+        responsible_party=bc.responsible_party,
+        allocated_amount=allocated, committed_amount=committed,
+        available_balance=allocated - committed,
+    )
+
+
+def _bulk_committed_amounts(db: Session, budget_code_ids: List[int]) -> dict:
+    """Committed amount (sum of non-draft/rejected/returned requisitions)
+    for a whole batch of budget codes in a single grouped query, instead of
+    one query per budget code. This is the main fix for the Work Plan &
+    Budget table being slow to load with many rows."""
+    if not budget_code_ids:
+        return {}
+    rows = (
+        db.query(Requisition.budget_code_id, func.sum(Requisition.amount_requested))
+        .filter(
+            Requisition.budget_code_id.in_(budget_code_ids),
+            Requisition.status.notin_(["rejected", "returned", "draft"]),
+        )
+        .group_by(Requisition.budget_code_id)
+        .all()
+    )
+    return {bc_id: (amt or 0.0) for bc_id, amt in rows}
+
+
+@app.get("/api/budget-codes", response_model=List[BudgetCodeOut])
+def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optional[int] = None,
+                       search: Optional[str] = None,
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    cache_key = f"budget_codes:{work_plan_id}:{department_id}:{(search or '').strip().lower()}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    # joinedload(BudgetCode.department) is the other half of the fix (along
+    # with _bulk_committed_amounts above it): budget_code_to_out() reads
+    # bc.department for every row (department_name / department_code_and_name).
+    # Without eager-loading, that's a lazy-loaded relationship, so every row
+    # triggered its own extra department SELECT — an N+1 pattern just like the
+    # old committed_amount one, and the real reason this endpoint could still
+    # crawl (or effectively hang, since the frontend fetch has no timeout) on
+    # a work plan with a few hundred imported rows even after that first fix.
+    # One joinedload turns "N extra queries" into "0 extra queries" by
+    # fetching departments in the same query via a SQL JOIN.
+    q = db.query(BudgetCode).options(joinedload(BudgetCode.department))
+    if work_plan_id:
+        q = q.filter(BudgetCode.work_plan_id == work_plan_id)
+    if department_id:
+        q = q.filter(BudgetCode.department_id == department_id)
+    if search:
+        like = f"%{search}%"
+        q = q.filter(BudgetCode.output_description.ilike(like) | BudgetCode.code.ilike(like))
+    # Ordered by id (insertion order) rather than code, so rows imported
+    # from Excel are displayed in the exact same order they appeared in the
+    # workbook, instead of being re-sorted alphabetically by code.
+    codes = q.order_by(BudgetCode.id.asc()).all()
+
+    committed_map = _bulk_committed_amounts(db, [bc.id for bc in codes])
+    result = [budget_code_to_out(bc, committed_map.get(bc.id, 0.0)) for bc in codes]
+
+    _cache_set(cache_key, result)
+    return result
+
+
+_BUDGET_CODE_NUMERIC_FIELDS = ("baseline_value", "planned_target", "q1_amount", "q2_amount", "q3_amount", "q4_amount")
+
+
+@app.post("/api/budget-codes", response_model=BudgetCodeOut)
+def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    data = payload.dict()
+    for f in _BUDGET_CODE_NUMERIC_FIELDS:
+        data[f] = parse_amount(data[f])
+
+    dup_key = _budget_code_dup_key(data.get("code"), data.get("output_description"))
+    if dup_key and dup_key in _existing_budget_code_keys(db, data["work_plan_id"]):
+        raise HTTPException(status_code=400, detail=f"Cannot add this entry — {_budget_code_dup_message(dup_key)}.")
+
+    bc = BudgetCode(**data)
+    db.add(bc)
+    db.commit()
+    db.refresh(bc)
+    log_action(db, admin.id, "budget_code.create", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
+    return budget_code_to_out(bc)
+
+
+@app.delete("/api/budget-codes/clear", response_model=BudgetCodeClearResult)
+def clear_budget_codes(work_plan_id: int, db: Session = Depends(get_db),
+                        admin: User = Depends(require_roles("admin"))):
+    """Delete every Activity & Budget Estimate row for a given work plan in
+    one go — powers the "Clear" button on the Annual Work Plan table so an
+    administrator can wipe the table clean before re-entering or
+    re-importing data. Rows that already have requisitions raised against
+    them are left in place (same protection as the single-row delete
+    endpoint) and reported back as skipped rather than blocking the whole
+    operation."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    codes = db.query(BudgetCode).filter(BudgetCode.work_plan_id == work_plan_id).all()
+    deleted = 0
+    skipped = 0
+    for bc in codes:
+        if db.query(Requisition).filter(Requisition.budget_code_id == bc.id).count() > 0:
+            skipped += 1
+            continue
+        db.query(Activity).filter(Activity.budget_code_id == bc.id).delete()
+        db.delete(bc)
+        deleted += 1
+
+    db.commit()
+    log_action(db, admin.id, "budget_code.clear_all",
+               f"Cleared {deleted} budget estimate row(s) from work plan #{work_plan_id} ({skipped} skipped — have requisitions on record)")
+    _invalidate_budget_code_caches()
+    return BudgetCodeClearResult(deleted=deleted, skipped=skipped)
+
+
+@app.patch("/api/budget-codes/{bc_id}", response_model=BudgetCodeOut)
+def update_budget_code(bc_id: int, payload: BudgetCodeUpdate, db: Session = Depends(get_db),
+                        admin: User = Depends(require_roles("admin"))):
+    bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
+    if not bc:
+        raise HTTPException(status_code=404, detail="Budget code not found")
+    data = payload.dict(exclude_unset=True)
+    for f in _BUDGET_CODE_NUMERIC_FIELDS:
+        if f in data:
+            data[f] = parse_amount(data[f])
+    for field, value in data.items():
+        setattr(bc, field, value)
+    db.commit()
+    db.refresh(bc)
+    log_action(db, admin.id, "budget_code.update", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
+    return budget_code_to_out(bc)
+
+
+@app.delete("/api/budget-codes/{bc_id}")
+def delete_budget_code(bc_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
+    if not bc:
+        raise HTTPException(status_code=404, detail="Budget code not found")
+    if db.query(Requisition).filter(Requisition.budget_code_id == bc_id).count() > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete a budget code that has requisitions raised against it")
+    db.query(Activity).filter(Activity.budget_code_id == bc_id).delete()
+    db.delete(bc)
+    db.commit()
+    log_action(db, admin.id, "budget_code.delete", f"{bc.code} - {bc.output_description}")
+    _invalidate_budget_code_caches()
+    return {"ok": True}
+
+
+# ---- Excel import ----------------------------------------------------------
+#
+# FIXES APPLIED IN THIS VERSION (see inline comments below for details):
+#
+#   1. Header matching now collapses ALL whitespace (including embedded
+#      newlines, e.g. "Q1 \n(UGX)" as produced by Excel's alt-enter line
+#      wraps in a header cell) before comparing against the alias table.
+#      Previously "Q1 \n(UGX)".strip().lower() == "q1 \n(ugx)", which never
+#      matched the "q1 (ugx)" alias key, so Q1-Q4 (and therefore the derived
+#      Total Budget) were silently mapped to nothing and always stored as 0
+#      — regardless of what was actually typed in the workbook.
+#
+#   2. Department matching is now tolerant of "&" vs "and", extra spacing,
+#      and case differences (the same council's own workbook mixes
+#      "Administration and Support Services" and "Administration & Support
+#      Services" across rows). A department that still can't be matched
+#      after normalising is auto-created (import is admin-only, so this is
+#      safe) instead of the row being silently skipped — this is what was
+#      causing "only one department imported, everything after is left
+#      out": once the normalized name stopped matching, every remaining row
+#      in the workbook (including new departments and quarter figures) was
+#      rejected as "department not found".
+#
+#   3. Rows that are not real data — repeated header rows (Excel workbooks
+#      exported per-page often repeat the header every ~15-20 rows) and
+#      "Sub Total"/"Total" summary rows — are now recognised and skipped
+#      quietly (not counted as warnings/errors), instead of being reported
+#      as confusing "department not found" errors.
+
+_IMPORT_COLUMN_ALIASES = {
+    "department": "department",
+    "service area": "service_area",
+    "programme": "programme",
+    "program": "programme",
+    "sub programme": "sub_programme",
+    "sub-programme": "sub_programme",
+    "sub program": "sub_programme",
+    "budget output code": "code",
+    "budget output": "output_description",
+    "budget output description": "output_description",
+    "piap output description": "piap_output_description",
+    "piap output indicator": "piap_output_indicator",
+    "unit of measure": "unit_of_measure",
+    "baseline value": "baseline_value",
+    "baseline": "baseline_value",
+    "planned target": "planned_target",
+    "target": "planned_target",
+    "actual output": "actual_output",
+    "q1(ugx)": "q1_amount", "q1 (ugx)": "q1_amount", "q1": "q1_amount",
+    "q2(ugx)": "q2_amount", "q2 (ugx)": "q2_amount", "q2": "q2_amount",
+    "q3(ugx)": "q3_amount", "q3 (ugx)": "q3_amount", "q3": "q3_amount",
+    "q4(ugx)": "q4_amount", "q4 (ugx)": "q4_amount", "q4": "q4_amount",
+    "total budget (ugx)": "_total_budget_ignored",
+    "total budget": "_total_budget_ignored",
+    "funding source": "funding_source",
+    "revenue source": "funding_source",
+    "responsible party": "responsible_party",
+}
+
+_NUMERIC_FIELD_LABELS = {
+    "baseline_value": "Baseline Value",
+    "planned_target": "Planned Target",
+    "q1_amount": "Q1 (UGX)",
+    "q2_amount": "Q2 (UGX)",
+    "q3_amount": "Q3 (UGX)",
+    "q4_amount": "Q4 (UGX)",
+}
+
+# Collapses ANY run of whitespace — spaces, tabs, and (crucially) the
+# embedded newlines Excel inserts when a header cell uses alt-enter line
+# wraps, e.g. "Q1 \n(UGX)" — down to a single space, so header text always
+# normalises to the same key regardless of how it was line-wrapped in the
+# source spreadsheet.
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_header_key(h) -> str:
+    if h is None:
+        return ""
+    return _WHITESPACE_RE.sub(" ", str(h)).strip().lower()
+
+
+# Normalises a department name for matching: case-insensitive, "&" treated
+# the same as "and", and all whitespace collapsed. This is what lets
+# "Administration & Support Services" match an existing department already
+# stored as "Administration and Support Services". Also reused (loosely)
+# by the revenue-source importer to detect subtotal/total marker rows.
+def _normalize_dept_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    n = _WHITESPACE_RE.sub(" ", str(name)).strip().lower()
+    n = re.sub(r"\s*&\s*", " and ", n)
+    n = _WHITESPACE_RE.sub(" ", n).strip()
+    return n
+
+
+# Rows whose "Department" cell is one of these (after normalising) are not
+# real budget entries — they're page-footer subtotal/total rows carried
+# over from the source workbook's print layout — and should be skipped
+# quietly rather than reported as import errors.
+_SUBTOTAL_MARKERS = {"sub total", "subtotal", "total", "grand total"}
+
+
+# --------------------------------------------------------------------------
+# Duplicate-entry guards
+# --------------------------------------------------------------------------
+# Stops the same record from ending up in the database twice — whether it
+# arrives via the Excel importer or is typed in manually through the "Add"
+# forms. Both paths funnel through the same key/lookup helpers below, so a
+# row that's already on file is rejected the same way either way.
+#
+#   - Budget Codes: two rows are considered the same entry if they share a
+#     Budget Output Code (case/space insensitive) within the same work
+#     plan. When the code is blank, the Budget Output Description is used
+#     as the fallback identity instead. If both are blank there's nothing
+#     reliable to key on, so that one row is left alone (matches the
+#     existing "imported with a blank code/description" warning path).
+#   - Revenue Sources: two rows are considered the same entry if they share
+#     a (PBS Fund Code, Source of Financing Name) pair (case/space
+#     insensitive) within the same work plan.
+
+def _budget_code_dup_key(code: Optional[str], output_description: Optional[str]) -> Optional[tuple]:
+    norm_code = _normalize_header_key(code)
+    if norm_code:
+        return ("code", norm_code)
+    norm_desc = _normalize_header_key(output_description)
+    if norm_desc:
+        return ("desc", norm_desc)
+    return None
+
+
+def _existing_budget_code_keys(db: Session, work_plan_id: int) -> set:
+    rows = (
+        db.query(BudgetCode.code, BudgetCode.output_description)
+        .filter(BudgetCode.work_plan_id == work_plan_id)
+        .all()
+    )
+    keys = set()
+    for code, desc in rows:
+        key = _budget_code_dup_key(code, desc)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _budget_code_dup_message(dup_key: tuple) -> str:
+    field = "Budget Output Code" if dup_key[0] == "code" else "Budget Output Description"
+    return f"a budget estimate row with this {field} already exists in this work plan"
+
+
+def _revenue_source_dup_key(pbs_fund_code: Optional[str], source_of_financing_name: Optional[str]) -> Optional[tuple]:
+    norm_name = _normalize_dept_name(source_of_financing_name)
+    if not norm_name:
+        return None
+    return (_normalize_header_key(pbs_fund_code), norm_name)
+
+
+def _existing_revenue_source_keys(db: Session, work_plan_id: int) -> set:
+    rows = (
+        db.query(RevenueSource.pbs_fund_code, RevenueSource.source_of_financing_name)
+        .filter(RevenueSource.work_plan_id == work_plan_id)
+        .all()
+    )
+    keys = set()
+    for fund_code, name in rows:
+        key = _revenue_source_dup_key(fund_code, name)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _generate_department_code(name: str, existing_codes: set) -> str:
+    """Best-effort short code derived from a department's name, for when a
+    brand-new department has to be auto-created during import (the source
+    workbook only carries the name, not a short code). Falls back to a
+    numbered suffix if the derived code collides with one already in use."""
+    words = re.findall(r"[A-Za-z0-9]+", name or "")
+    if not words:
+        base = "DEPT"
+    else:
+        base = "".join(w[0] for w in words[:6]).upper()
+        if len(base) < 2:
+            base = (words[0][:4]).upper()
+    base = base[:12] or "DEPT"
+    code = base
+    n = 1
+    while code in existing_codes:
+        n += 1
+        code = f"{base}{n}"
+    return code
+
+
+@app.post("/api/budget-codes/import", response_model=BudgetCodeImportResult)
+async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
+                               db: Session = Depends(get_db),
+                               admin: User = Depends(require_roles("admin"))):
+    """
+    Bulk-create Budget Estimates rows from an uploaded Excel workbook so a
+    user can prepare the "New Budget Estimates Data Entry Form" data offline
+    (e.g. in the Council's existing spreadsheet template) and have every row
+    populate directly into the system, instead of typing each one in
+    manually.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed."
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="The uploaded workbook appears to be empty")
+
+    # FIX (1): normalize header text (collapsing embedded newlines like the
+    # "Q1 \n(UGX)" case) before looking it up in the alias table.
+    header = [_normalize_header_key(h) for h in rows[0]]
+    col_map = {}  # column index -> field name
+    for idx, h in enumerate(header):
+        field = _IMPORT_COLUMN_ALIASES.get(h)
+        if field:
+            col_map[idx] = field
+    dept_col_idx = next((idx for idx, f in col_map.items() if f == "department"), None)
+    code_col_idx = next((idx for idx, f in col_map.items() if f == "code"), None)
+
+    if "output_description" not in col_map.values() or "code" not in col_map.values():
+        raise HTTPException(
+            status_code=400,
+            detail="The workbook must at least include 'Budget Output Code' and 'Budget Output Description' columns"
+        )
+
+    # FIX (2): build the department lookup keyed by a normalized name (case
+    # / "&" vs "and" / whitespace insensitive) so workbook rows using either
+    # spelling resolve to the same existing department.
+    all_departments = db.query(Department).all()
+    departments_by_normalized_name = {_normalize_dept_name(d.name): d for d in all_departments}
+    departments_by_code = {_normalize_header_key(d.code): d for d in all_departments}
+    existing_dept_codes = {d.code for d in all_departments}
+    departments_created = 0
+
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    # Tracks every Budget Output Code / Budget Output Description already
+    # on file for this work plan (seeded from the database, then grown as
+    # rows are imported) so a row already present — or repeated twice
+    # within the same workbook — is rejected instead of creating a
+    # duplicate entry.
+    existing_budget_code_keys = _existing_budget_code_keys(db, work_plan_id)
+
+    def _num(v, field_key: str = None, row_idx: int = None, row_warnings: list = None):
+        value, ok, original = parse_amount_verbose(v)
+        if not ok and row_warnings is not None:
+            label = _NUMERIC_FIELD_LABELS.get(field_key, field_key or "value")
+            loc = f"Row {row_idx}: " if row_idx else ""
+            row_warnings.append(f"{loc}could not read '{original}' as a number for {label} — treated as 0")
+        return value
+
+    # Baseline Value / Planned Target are frequently narrative or
+    # multi-part text in real PIAP work plans (e.g. "25% of Council area
+    # mapped for vectors", or a per-quarter list like "12; 4; 4; 4; 4; 4;
+    # 4"), not a single clean number. Rather than zeroing these out and
+    # losing the detail, we pull out a best-effort leading number (for
+    # existing numeric aggregates/charts) and keep the full original text
+    # in a companion *_note field. This does NOT raise a row warning —
+    # unlike Q1-Q4 amounts, non-numeric baseline/target text is expected
+    # and normal, not something to flag as a problem.
+    def _num_with_note(v):
+        value, was_text = parse_leading_number(v)
+        note = None
+        if was_text:
+            _, _, original = parse_amount_verbose(v)
+            note = original or None
+        return value, note
+
+    def _text(v):
+        return str(v).strip() if v is not None else None
+
+    # FIX (4): every non-blank row in the workbook is now imported — rows
+    # are no longer skipped just because the Department, Budget Output
+    # Code, or Budget Output Description cell is empty. Excel workbooks
+    # routinely leave those cells blank on continuation rows (merged
+    # cells that only carry a value on the first row of a group), so
+    # requiring them on every single row silently dropped legitimate data.
+    # Department (and, as a light touch, the other grouping columns) now
+    # simply carries forward from the last row that had a value, matching
+    # how the source workbook visually groups rows under one heading.
+    last_dept_name_raw: Optional[str] = None
+    last_service_area: Optional[str] = None
+    last_programme: Optional[str] = None
+    last_sub_programme: Optional[str] = None
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue  # truly blank row — nothing in it to import
+
+        data = {}
+        for idx, field in col_map.items():
+            data[field] = row[idx] if idx < len(row) else None
+
+        dept_name_raw = _text(data.get("department"))
+
+        # FIX (3a): silently skip repeated header rows. These occur when the
+        # source workbook was formatted for printing and the header row was
+        # repeated every page; the whole row (department/code/etc.) matches
+        # the actual header text, so it is not a data row at all.
+        raw_dept_cell = row[dept_col_idx] if dept_col_idx is not None and dept_col_idx < len(row) else None
+        raw_code_cell = row[code_col_idx] if code_col_idx is not None and code_col_idx < len(row) else None
+        if _normalize_header_key(raw_dept_cell) == "department" or _normalize_header_key(raw_code_cell) == "budget output code":
+            continue
+
+        # FIX (3b): silently skip "Sub Total" / "Total" summary rows carried
+        # over from the workbook's print layout — these aren't real budget
+        # output entries and have no code/description of their own.
+        if _normalize_dept_name(dept_name_raw) in _SUBTOTAL_MARKERS:
+            continue
+
+        row_warnings: List[str] = []
+
+        code = _text(data.get("code"))
+        output_description = _text(data.get("output_description"))
+        if not code:
+            row_warnings.append(f"Row {row_idx}: Budget Output Code was blank — imported with a blank code")
+        if not output_description:
+            row_warnings.append(f"Row {row_idx}: Budget Output Description was blank — imported with a blank description")
+
+        # Reject this row outright if it's already in the database (or was
+        # already imported earlier in this same workbook) — same rule the
+        # manual "Add" form enforces, applied here to every imported row.
+        dup_key = _budget_code_dup_key(code, output_description)
+        if dup_key and dup_key in existing_budget_code_keys:
+            skipped += 1
+            errors.append(f"Row {row_idx}: skipped — {_budget_code_dup_message(dup_key)}")
+            continue
+
+        service_area = _text(data.get("service_area")) or last_service_area
+        programme = _text(data.get("programme")) or last_programme
+        sub_programme = _text(data.get("sub_programme")) or last_sub_programme
+        last_service_area = service_area or last_service_area
+        last_programme = programme or last_programme
+        last_sub_programme = sub_programme or last_sub_programme
+
+        if not dept_name_raw:
+            # Continuation row under the same department heading as the
+            # last row that specified one (a merged-cell group in the
+            # source sheet). Departments are never auto-generated by the
+            # system, so if no department has been seen yet in this sheet
+            # the row is skipped and flagged rather than filed under a
+            # placeholder department.
+            dept_name_raw = last_dept_name_raw
+            if not dept_name_raw:
+                skipped += 1
+                errors.append(f"Row {row_idx}: no department specified anywhere above this row — skipped. Add the department first, then re-import.")
+                continue
+        last_dept_name_raw = dept_name_raw
+
+        normalized_dept = _normalize_dept_name(dept_name_raw)
+        dept = departments_by_normalized_name.get(normalized_dept)
+        if not dept:
+            # The PBS workbook often writes the department cell as
+            # "<code>: <name>" (e.g. "090: Community Based Services"),
+            # while a Department record stores the code and name in
+            # separate fields. Strip a leading "<code>:" / "<code> -" /
+            # "<code>." style prefix and retry the name match, and also
+            # try matching the prefix directly against a department's
+            # code, before concluding the department truly doesn't exist.
+            code_prefix_match = re.match(r"^\s*([A-Za-z0-9]+)\s*[:.\-]\s*(.+)$", dept_name_raw)
+            if code_prefix_match:
+                prefix, remainder = code_prefix_match.group(1), code_prefix_match.group(2)
+                dept = departments_by_normalized_name.get(_normalize_dept_name(remainder))
+                if not dept:
+                    dept = departments_by_code.get(_normalize_header_key(prefix))
+        if not dept:
+            # Departments are only ever created when a user explicitly adds
+            # one (Departments page). The importer no longer creates them on
+            # the fly — a row referencing an unknown department is skipped
+            # and flagged so it can be re-imported once that department
+            # has been added.
+            skipped += 1
+            errors.append(f"Row {row_idx}: department '{dept_name_raw}' does not exist — skipped. Add it under Departments first, then re-import.")
+            continue
+
+        baseline_value, baseline_note = _num_with_note(data.get("baseline_value"))
+        planned_target, target_note = _num_with_note(data.get("planned_target"))
+
+        bc = BudgetCode(
+            work_plan_id=work_plan_id,
+            department_id=dept.id,
+            service_area=service_area,
+            code=code or "",
+            output_description=output_description or "",
+            programme=programme,
+            sub_programme=sub_programme,
+            piap_output_description=_text(data.get("piap_output_description")),
+            piap_output_indicator=_text(data.get("piap_output_indicator")),
+            unit_of_measure=_text(data.get("unit_of_measure")),
+            baseline_value=baseline_value,
+            baseline_note=baseline_note,
+            planned_target=planned_target,
+            target_note=target_note,
+            actual_output=_text(data.get("actual_output")),
+            q1_amount=_num(data.get("q1_amount"), "q1_amount", row_idx, row_warnings),
+            q2_amount=_num(data.get("q2_amount"), "q2_amount", row_idx, row_warnings),
+            q3_amount=_num(data.get("q3_amount"), "q3_amount", row_idx, row_warnings),
+            q4_amount=_num(data.get("q4_amount"), "q4_amount", row_idx, row_warnings),
+            funding_source=_text(data.get("funding_source")) or "Local Revenue",
+            responsible_party=_text(data.get("responsible_party")),
+        )
+        db.add(bc)
+        created += 1
+        if dup_key:
+            existing_budget_code_keys.add(dup_key)
+        errors.extend(row_warnings)
+
+    db.commit()
+    log_action(db, admin.id, "budget_code.import",
+               f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} "
+               f"({skipped} skipped, {departments_created} department(s) auto-created)")
+    _invalidate_budget_code_caches()
+    return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=departments_created,
+                                   errors=errors[:30], total_warnings=len(errors))
+
+
+# ---------------------------- Activities ------------------------------------
+
+@app.get("/api/activities", response_model=List[ActivityOut])
+def list_activities(budget_code_id: Optional[int] = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(Activity).filter(Activity.is_active == True)
+    if budget_code_id:
+        q = q.filter(Activity.budget_code_id == budget_code_id)
+    return q.all()
+
+
+@app.post("/api/activities", response_model=ActivityOut)
+def create_activity(payload: ActivityIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    act = Activity(**payload.dict())
+    db.add(act)
+    db.commit()
+    db.refresh(act)
+    log_action(db, admin.id, "activity.create", act.name)
+    return act
+
+
+# ---------------------------- Requisitions ----------------------------------
+
+def _dept_ref_slug(department_name: Optional[str]) -> str:
+    """Turns a department name into the short upper-case token used in the
+    reference number — the department's abbreviation (see
+    department_abbreviation()), e.g. "Administration and Management
+    Support Services" -> "AMS". Falls back to "GENERAL" when there's no
+    department name at all."""
+    if not department_name:
+        return "GENERAL"
+    return department_abbreviation(department_name)
+
+
+def gen_ref_no(db: Session, department_name: Optional[str]) -> str:
+    """Reference number format: KTC-<DEPARTMENT ABBREVIATION>-YY-MM-DD-001, 002, ...
+
+    The sequence number is per department, per day, zero-padded to 3
+    digits, and restarts at 001 the next calendar day (or for a different
+    department). Collisions are re-checked in a loop so concurrent saves
+    on the same department/day never collide.
+    """
+    now = dt.datetime.utcnow()
+    yy = now.strftime("%y")
+    mm = now.strftime("%m")
+    dd = now.strftime("%d")
+    dept_slug = _dept_ref_slug(department_name)
+    prefix = f"KTC-{dept_slug}-{yy}-{mm}-{dd}-"
+    existing = (
+        db.query(Requisition.ref_no)
+        .filter(Requisition.ref_no.like(f"{prefix}%"))
+        .count()
+    )
+    seq = existing + 1
+    ref_no = f"{prefix}{seq:03d}"
+    while db.query(Requisition).filter(Requisition.ref_no == ref_no).first():
+        seq += 1
+        ref_no = f"{prefix}{seq:03d}"
+    return ref_no
+
+
+def _parse_requisition_line_items(raw: Optional[str]) -> list:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def _parse_voucher_data(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def requisition_to_dict(r: Requisition) -> dict:
+    return {
+        "id": r.id,
+        "ref_no": r.ref_no,
+        "requester_id": r.requester_id,
+        # Prefer the free-text "Requisitioner (Full names)" typed on the
+        # form itself; fall back to the account's own name for older
+        # requisitions saved before this field existed.
+        "requester_name": r.requester_name or (r.requester.full_name if r.requester else None),
+        "requester_position": r.requester_position or (r.requester.position if r.requester else None),
+        "requester_mobile": r.requester_mobile or (r.requester.telephone if r.requester else None),
+        "requester_account_name": r.requester.full_name if r.requester else None,
+        "requester_email": r.requester.email if r.requester else None,
+        "requester_role": r.requester.role if r.requester else None,
+        "requester_signature_url": r.requester.signature_url if r.requester else None,
+        "department_id": r.department_id,
+        "department_name": _dept_label(r.department),
+        "budget_code_id": r.budget_code_id,
+        "budget_code": r.budget_code.code if r.budget_code else r.budget_output_code_text,
+        "budget_output": r.budget_code.output_description if r.budget_code else None,
+        "activity_budget_limit": r.budget_code.allocated_amount if r.budget_code else None,
+        "activity_budget_balance": r.budget_code.available_balance if r.budget_code else None,
+        "activity_id": r.activity_id,
+        "activity_name": r.activity.name if r.activity else None,
+        "activity_details": r.activity_details,
+        "subject": r.subject,
+        "financial_year": r.financial_year,
+        "quarter": r.quarter,
+        "payment_voucher_number": r.payment_voucher_number,
+        "line_items": _parse_requisition_line_items(r.line_items),
+        "voucher_data": _parse_voucher_data(r.voucher_data),
+        "amount_requested": r.amount_requested,
+        "status": r.status,
+        "current_stage": r.current_stage,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        "approvals": [
+            {
+                "stage": a.stage, "actor": a.actor.full_name if a.actor else None,
+                "action": a.action, "comments": a.comments,
+                "actor_signature_url": a.actor.signature_url if a.actor else None,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            } for a in r.approvals
+        ],
+        "documents": [
+            {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{d.stored_path}"}
+            for d in r.documents
+        ],
+        "accountability": {
+            "status": r.accountability.status if r.accountability else None,
+            "remarks": r.accountability.remarks if r.accountability else None,
+            "has_voucher": any(d.doc_type == "voucher" for d in r.documents),
+            "has_documents": len(r.documents) > 0,
+        } if r.accountability else None,
     }
-  },
-  {
-    key: 'mdp',
-    pbs_fund_code: '400',
-    source_of_financing_name: 'Multi-lateral Development Partners',
-    functional_definition: 'International institutional donor funding (e.g., World Bank, UNICEF).',
-    match: (r) => {
-      const code = String(r.pbs_fund_code || '').trim();
-      const name = String(r.source_of_financing_name || '').toLowerCase();
-      return code === '400' || name.includes('multi-lateral') || name.includes('multilateral') || name.includes('development partner') || name.includes('donor');
+
+
+@app.get("/api/requisitions")
+def list_requisitions(status_filter: Optional[str] = Query(None, alias="status"),
+                       mine: bool = False,
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(Requisition)
+    if user.role == "staff" or mine:
+        q = q.filter(Requisition.requester_id == user.id)
+    elif user.role == "hod":
+        if not user.department_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Your account has no Department assigned, so requisitions cannot be matched to you. "
+                       "Please ask your System Administrator to assign your Department under Users."
+            )
+        q = q.filter(Requisition.department_id == user.department_id)
+    if status_filter:
+        q = q.filter(Requisition.status == status_filter)
+    reqs = q.order_by(Requisition.created_at.desc()).all()
+    return [requisition_to_dict(r) for r in reqs]
+
+
+@app.get("/api/requisitions/{req_id}")
+def get_requisition(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    return requisition_to_dict(r)
+
+
+@app.post("/api/requisitions")
+def create_requisition(payload: RequisitionIn, submit: bool = False,
+                        db: Session = Depends(get_db),
+                        user: User = Depends(require_roles("staff", "hod", "admin"))):
+    bc = None
+    if payload.budget_code_id:
+        bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
+        if not bc:
+            raise HTTPException(status_code=400, detail="Selected budget code does not exist")
+
+    dept_id = payload.department_id or user.department_id or (bc.department_id if bc else None)
+    if not dept_id:
+        raise HTTPException(status_code=400, detail="Please select a Department")
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=400, detail="Selected department does not exist")
+
+    if not payload.line_items:
+        raise HTTPException(status_code=400, detail="Please add at least one line item")
+
+    total = sum((li.amount or 0) for li in payload.line_items)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="Please add at least one priced line item")
+
+    r = Requisition(
+        ref_no=gen_ref_no(db, dept.name),
+        requester_id=user.id,
+        department_id=dept.id,
+        budget_code_id=payload.budget_code_id,
+        activity_id=payload.activity_id,
+        subject=payload.subject,
+        financial_year=(payload.financial_year or "").strip() or None,
+        quarter=(payload.quarter or "").strip() or None,
+        requester_name=(payload.requester_name or "").strip() or user.full_name,
+        requester_position=(payload.requester_position or "").strip() or user.position,
+        requester_mobile=(payload.requester_mobile or "").strip() or user.telephone,
+        budget_output_code_text=(payload.budget_output_code_text or "").strip() or (bc.code if bc else None),
+        payment_voucher_number=(payload.payment_voucher_number or "").strip() or None,
+        line_items=json.dumps([li.dict() for li in payload.line_items]),
+        voucher_data=json.dumps(payload.voucher.dict()) if payload.voucher else None,
+        amount_requested=total,
+        status="draft",
+        current_stage="hod",
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+
+    if submit:
+        _submit_requisition(r, db, user)
+
+    log_action(db, user.id, "requisition.create", r.ref_no)
+    _invalidate_budget_code_caches()
+    return requisition_to_dict(r)
+
+
+def _submit_requisition(r: Requisition, db: Session, user: User):
+    bc = r.budget_code
+    if bc:
+        if r.activity_id:
+            act = db.query(Activity).filter(Activity.id == r.activity_id, Activity.budget_code_id == bc.id).first()
+            if not act:
+                raise HTTPException(status_code=400, detail="The selected activity is not part of the approved work plan for this budget code")
+        if bc.available_balance < r.amount_requested:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient available budget. Available balance is UGX {bc.available_balance:,.0f}, requested UGX {r.amount_requested:,.0f}"
+            )
+    r.status = "submitted"
+    r.current_stage = "hod"
+    r.updated_at = dt.datetime.utcnow()
+    db.commit()
+    notify_role(db, "hod", f"New requisition {r.ref_no} awaiting your approval", "approval_request", r.id)
+    _invalidate_budget_code_caches()
+
+
+@app.post("/api/requisitions/{req_id}/submit")
+def submit_requisition(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    if r.requester_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only submit your own requisitions")
+    if r.status not in ("draft", "returned"):
+        raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be submitted")
+    _submit_requisition(r, db, user)
+    log_action(db, user.id, "requisition.submit", r.ref_no)
+    return requisition_to_dict(r)
+
+
+@app.patch("/api/requisitions/{req_id}")
+def update_requisition(req_id: int, payload: RequisitionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    if r.requester_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only edit your own requisitions")
+    if r.status not in ("draft", "returned"):
+        raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be edited")
+
+    bc = None
+    if payload.budget_code_id:
+        bc = db.query(BudgetCode).filter(BudgetCode.id == payload.budget_code_id).first()
+        if not bc:
+            raise HTTPException(status_code=400, detail="Selected budget code does not exist")
+    if not payload.line_items:
+        raise HTTPException(status_code=400, detail="Please add at least one line item")
+    total = sum((li.amount or 0) for li in payload.line_items)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="Please add at least one priced line item")
+
+    if payload.department_id:
+        dept = db.query(Department).filter(Department.id == payload.department_id).first()
+        if not dept:
+            raise HTTPException(status_code=400, detail="Selected department does not exist")
+        r.department_id = dept.id
+
+    r.budget_code_id = payload.budget_code_id
+    r.activity_id = payload.activity_id
+    r.subject = payload.subject
+    r.financial_year = (payload.financial_year or "").strip() or None
+    r.quarter = (payload.quarter or "").strip() or None
+    r.requester_name = (payload.requester_name or "").strip() or r.requester_name
+    r.requester_position = (payload.requester_position or "").strip() or r.requester_position
+    r.requester_mobile = (payload.requester_mobile or "").strip() or r.requester_mobile
+    r.budget_output_code_text = (payload.budget_output_code_text or "").strip() or (bc.code if bc else r.budget_output_code_text)
+    r.payment_voucher_number = (payload.payment_voucher_number or "").strip() or None
+    r.line_items = json.dumps([li.dict() for li in payload.line_items])
+    r.voucher_data = json.dumps(payload.voucher.dict()) if payload.voucher else None
+    r.amount_requested = total
+    r.updated_at = dt.datetime.utcnow()
+    db.commit()
+    db.refresh(r)
+    log_action(db, user.id, "requisition.update", r.ref_no)
+    _invalidate_budget_code_caches()
+    return requisition_to_dict(r)
+
+
+@app.delete("/api/requisitions/{req_id}")
+def delete_requisition(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    if r.requester_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only delete your own requisitions")
+    if r.status not in ("draft", "returned"):
+        raise HTTPException(status_code=400, detail="Only draft or returned requisitions can be deleted")
+    db.query(Document).filter(Document.requisition_id == req_id).delete()
+    db.query(ApprovalHistory).filter(ApprovalHistory.requisition_id == req_id).delete()
+    db.delete(r)
+    db.commit()
+    log_action(db, user.id, "requisition.delete", r.ref_no)
+    _invalidate_budget_code_caches()
+    return {"ok": True}
+
+
+STAGE_ROLE = {"hod": "hod", "treasurer": "treasurer", "clerk": "clerk"}
+NEXT_STAGE = {"hod": "treasurer", "treasurer": "clerk", "clerk": "done"}
+STAGE_STATUS = {"hod": "hod_approved", "treasurer": "treasurer_approved", "clerk": "approved"}
+
+
+@app.post("/api/requisitions/{req_id}/approve-action")
+def approval_action(req_id: int, payload: ApprovalActionIn,
+                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+
+    stage = r.current_stage
+    if stage not in STAGE_ROLE:
+        raise HTTPException(status_code=400, detail="This requisition is not awaiting approval")
+    if user.role != STAGE_ROLE[stage] and user.role != "admin":
+        raise HTTPException(status_code=403, detail=f"Only the {STAGE_ROLE[stage].upper()} can act on this stage")
+    if stage == "hod" and user.role == "hod" and user.department_id != r.department_id:
+        raise HTTPException(status_code=403, detail="This requisition belongs to a different Department")
+    if payload.action not in ("approve", "reject", "return"):
+        raise HTTPException(status_code=400, detail="Action must be approve, reject or return")
+
+    history = ApprovalHistory(
+        requisition_id=r.id, stage=stage, actor_id=user.id,
+        action=payload.action, comments=payload.comments,
+    )
+    db.add(history)
+
+    if payload.action == "approve":
+        if stage == "treasurer" and r.budget_code and r.budget_code.available_balance < 0:
+            raise HTTPException(status_code=400, detail="Budget has since been exhausted for this code")
+        r.status = STAGE_STATUS[stage]
+        nxt = NEXT_STAGE[stage]
+        if nxt == "done":
+            r.current_stage = "done"
+            r.status = "approved"
+            acc = AccountabilityRecord(requisition_id=r.id, status="pending")
+            db.add(acc)
+            notify_role(db, "auditor", f"Requisition {r.ref_no} approved - accountability documents required", "accountability_pending", r.id)
+            notify(
+                db, r.requester_id,
+                f"Your requisition {r.ref_no} has been fully approved. Please upload the accountability "
+                f"documents (payment voucher, receipts, attendance sheets, etc.) for this requisition.",
+                "accountability_pending", r.id
+            )
+        else:
+            r.current_stage = nxt
+            notify_role(db, nxt, f"Requisition {r.ref_no} awaiting your approval", "approval_request", r.id)
+    elif payload.action == "reject":
+        r.status = "rejected"
+        r.current_stage = "closed"
+        notify(db, r.requester_id, f"Your requisition {r.ref_no} was rejected", "rejection", r.id)
+    else:  # return
+        r.status = "returned"
+        r.current_stage = "hod"
+        notify(db, r.requester_id, f"Your requisition {r.ref_no} was returned for correction", "rejection", r.id)
+
+    r.updated_at = dt.datetime.utcnow()
+    db.commit()
+    log_action(db, user.id, f"requisition.{payload.action}", f"{r.ref_no} at stage {stage}")
+    _invalidate_budget_code_caches()
+    return requisition_to_dict(r)
+
+
+@app.get("/api/approvals/pending")
+def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role not in ("hod", "treasurer", "clerk", "admin"):
+        raise HTTPException(status_code=403, detail="Not an approver role")
+    stage_for_role = {"hod": "hod", "treasurer": "treasurer", "clerk": "clerk"}
+    if user.role == "admin":
+        reqs = db.query(Requisition).filter(Requisition.current_stage.in_(["hod", "treasurer", "clerk"])).all()
+    else:
+        stage = stage_for_role[user.role]
+        q = db.query(Requisition).filter(Requisition.current_stage == stage)
+        if user.role == "hod":
+            if not user.department_id:
+                # An HOD account with no department assigned would otherwise
+                # silently match nothing here, looking exactly like "no
+                # pending approvals" even when requisitions are waiting.
+                # Surface the real problem instead of hiding it.
+                raise HTTPException(
+                    status_code=400,
+                    detail="Your account has no Department assigned, so requisitions awaiting your approval "
+                           "cannot be matched to you. Please ask your System Administrator to assign your "
+                           "Department under Users."
+                )
+            q = q.filter(Requisition.department_id == user.department_id)
+        reqs = q.all()
+    return [requisition_to_dict(r) for r in reqs]
+
+
+# ---------------------------- Documents (Backblaze B2) -----------------------
+
+@app.post("/api/requisitions/{req_id}/documents")
+async def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile = File(...),
+                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+
+    if not r.accountability:
+        raise HTTPException(
+            status_code=400,
+            detail="This requisition is not yet awaiting accountability documents. "
+                   "It must be fully approved before documents can be uploaded."
+        )
+    if user.id != r.requester_id and user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only the original requester or an administrator can upload accountability documents for this requisition"
+        )
+    if r.accountability.status == "verified":
+        raise HTTPException(status_code=400, detail="This requisition's accountability has already been verified")
+
+    allowed_ext = {".pdf", ".docx", ".jpg", ".jpeg", ".png"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail="Only PDF, DOCX, JPG and PNG files are allowed")
+
+    object_key = await upload_document_to_b2(file, r.id)
+
+    doc = Document(requisition_id=r.id, filename=file.filename, stored_path=object_key,
+                    doc_type=doc_type, uploaded_by=user.id)
+    db.add(doc)
+
+    if r.accountability.status == "flagged":
+        r.accountability.status = "pending"
+
+    db.commit()
+    log_action(db, user.id, "document.upload", f"{file.filename} on {r.ref_no}")
+    notify_role(db, "auditor", f"New accountability document uploaded for {r.ref_no}", "accountability_pending", r.id)
+    return {"id": doc.id, "filename": doc.filename, "doc_type": doc.doc_type, "url": f"/files/{object_key}"}
+
+
+@app.get("/files/{filename:path}")
+async def stream_document(filename: str, request: Request, db: Session = Depends(get_db)):
+    clean_key = filename.split("?")[0].strip("/")
+    if not clean_key:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    try:
+        head = b2_client.head_object(Bucket=B2_BUCKET_NAME, Key=clean_key)
+    except ClientError:
+        raise HTTPException(status_code=404, detail="File not found in storage")
+
+    file_size = head["ContentLength"]
+    content_type = head.get("ContentType") or "application/octet-stream"
+
+    range_header = request.headers.get("Range")
+    get_kwargs = {"Bucket": B2_BUCKET_NAME, "Key": clean_key}
+    status_code = 200
+    content_range = None
+    content_length = file_size
+
+    if range_header:
+        try:
+            _, range_value = range_header.split("=", 1)
+            start_str, end_str = range_value.split("-", 1)
+            start = int(start_str) if start_str.strip() else 0
+            end = int(end_str) if end_str.strip() else file_size - 1
+            end = min(end, file_size - 1)
+            if start > end or start >= file_size:
+                raise HTTPException(status_code=416, detail="Range Not Satisfiable")
+            get_kwargs["Range"] = f"bytes={start}-{end}"
+            content_length = end - start + 1
+            status_code = 206
+            content_range = f"bytes {start}-{end}/{file_size}"
+        except (ValueError, AttributeError):
+            pass
+
+    try:
+        b2_response = b2_client.get_object(**get_kwargs)
+    except ClientError:
+        raise HTTPException(status_code=502, detail="Storage fetch error")
+
+    doc = db.query(Document).filter(Document.stored_path == clean_key).first()
+    if doc:
+        display_name = doc.filename
+    else:
+        display_name = clean_key.split("/")[-1]
+
+    def _stream(body, chunk_size: int = 65536):
+        with body as stream:
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+    headers = {
+        "Content-Type": content_type,
+        "Content-Length": str(content_length),
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{display_name}"',
+        "Cache-Control": "private, max-age=3600",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
     }
-  },
-];
+    if content_range:
+        headers["Content-Range"] = content_range
 
-function categorizeRevenueSource(r) {
-  for (const cat of REVENUE_SUMMARY_CATEGORIES) {
-    if (cat.match(r)) return cat.key;
-  }
-  return null; // entries that don't match any of the three fixed categories are excluded from the summary totals
-}
-// ---- Revenue Source modal: PBS Fund Code / Revenue Source / Functional Definition
-// are drawn from the fixed REVENUE_SUMMARY_CATEGORIES constants as dropdowns (plus
-// an "Other" option for anything outside the three standard categories).
-const REV_CUSTOM_VALUE = '__custom__';
-const REV_FIELD_MAP = {
-  'rev-fund-code': { customId: 'rev-fund-code-custom', catField: 'pbs_fund_code' },
-  'rev-source-name': { customId: 'rev-source-name-custom', catField: 'source_of_financing_name' },
-  'rev-functional-def': { customId: 'rev-functional-def-custom', catField: 'functional_definition' },
-};
-function populateRevDropdowns() {
-  for (const [selectId, cfg] of Object.entries(REV_FIELD_MAP)) {
-    const optsHtml = REVENUE_SUMMARY_CATEGORIES.map(c =>
-      `<option value="${c.key}">${escapeHtml(c.pbs_fund_code)} — ${escapeHtml(c[cfg.catField])}</option>`
-    ).join('');
-    document.getElementById(selectId).innerHTML =
-      `<option value="">— Select —</option>${optsHtml}<option value="${REV_CUSTOM_VALUE}">Other (type manually)</option>`;
-  }
-}
-function setRevCustomVisible(selectId, visible) {
-  const el = document.getElementById(REV_FIELD_MAP[selectId].customId);
-  el.style.display = visible ? '' : 'none';
-  if (!visible) el.value = '';
-}
-function onRevCategorySelect(changedId) {
-  const val = document.getElementById(changedId).value;
-  if (val === REV_CUSTOM_VALUE) { setRevCustomVisible(changedId, true); return; }
-  setRevCustomVisible(changedId, false);
-  if (!val) return;
-  // The three fields describe one fixed category — keep them in sync.
-  for (const otherId of Object.keys(REV_FIELD_MAP)) {
-    if (otherId === changedId) continue;
-    document.getElementById(otherId).value = val;
-    setRevCustomVisible(otherId, false);
-  }
-}
-function getRevFieldValue(selectId) {
-  const cfg = REV_FIELD_MAP[selectId];
-  const val = document.getElementById(selectId).value;
-  if (val === REV_CUSTOM_VALUE) return document.getElementById(cfg.customId).value.trim();
-  if (!val) return '';
-  const cat = REVENUE_SUMMARY_CATEGORIES.find(c => c.key === val);
-  return cat ? cat[cfg.catField] : '';
-}
-// ---- Fetch helper -----------------------------------------------------------
-// fetchWithTimeout wraps the raw network call with an AbortController-based
-// timeout, since a hung request (e.g. a backend host that's slow to wake up)
-// would otherwise leave the caller waiting indefinitely instead of failing
-// in a way the retry logic below can act on.
-async function fetchWithTimeout(url, opts, timeoutMs) {
-const controller = new AbortController();
-const timer = setTimeout(() => controller.abort(), timeoutMs);
-try {
-return await fetch(url, { ...opts, signal: controller.signal });
-} finally {
-clearTimeout(timer);
-}
-}
-async function api(path, opts = {}) {
-const headers = opts.headers || {};
-if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-if (STATE.token) headers['Authorization'] = 'Bearer ' + STATE.token;
-// Network-level failures (DNS/connection errors, a cold backend instance
-// timing out, a dropped connection, etc.) surface here as a rejected
-// promise rather than an HTTP error response — retry once after a short
-// pause before giving up, since these are frequently transient (e.g. a
-// free-tier host waking from sleep on the very first request).
-let res;
-try {
-res = await fetchWithTimeout(API_BASE + path, { ...opts, headers }, 20000);
-} catch (networkErr) {
-try {
-await new Promise(r => setTimeout(r, 1500));
-res = await fetchWithTimeout(API_BASE + path, { ...opts, headers }, 30000);
-} catch (retryErr) {
-throw new Error('Could not reach the server. Please check your connection and try again in a moment.');
-}
-}
-if (res.status === 401) {
-logout();
-throw new Error('Session expired. Please sign in again.');
-}
-let data = null;
-try { data = await res.json(); } catch (e) { /* no body */ }
-if (!res.ok) {
-const msg = (data && data.detail) ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : 'Something went wrong';
-throw new Error(msg);
-}
-return data;
-}
-// ---- Toasts -----------------------------------------------------------------
-function toast(message, type = 'info') {
-const stack = document.getElementById('toast-stack');
-const el = document.createElement('div');
-el.className = 'toast ' + type;
-el.textContent = message;
-stack.appendChild(el);
-setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 4200);
-}
-function money(n) {
-if (typeof n === 'string') {
-const cleaned = n.replace(/[,\s\u00A0]/g, '').replace(/UGX|Ugx|ugx/g, '');
-n = cleaned === '' ? 0 : Number(cleaned);
-} else {
-n = Number(n || 0);
-}
-if (!Number.isFinite(n)) n = 0;
-return n.toLocaleString('en-UG', { maximumFractionDigits: 0 });
-}
-function parseNumericLoose(v) {
-if (v === null || v === undefined) return null;
-if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-let s = String(v).replace(/[,\s\u00A0]/g, '').replace(/UGX|Ugx|ugx|%/g, '').trim();
-if (s === '') return null;
-const n = Number(s);
-return Number.isFinite(n) ? n : null;
-}
-function fmtDate(iso) {
-if (!iso) return '—';
-const d = new Date(iso);
-return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' • ' +
-d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-// Uganda's financial year runs 1 Jul – 30 Jun, split into calendar quarters
-// Q1 Jul-Sep, Q2 Oct-Dec, Q3 Jan-Mar, Q4 Apr-Jun. These are only used to
-// pre-select a sensible default on the Financial Year / Quarter fields —
-// the requisitioner can always change either before saving.
-function currentFinancialYearGuess() {
-const now = new Date();
-const y = now.getFullYear();
-const startYear = now.getMonth() >= 6 ? y : y - 1; // getMonth() 6 = July
-return `${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`;
-}
-function currentQuarterGuess() {
-const m = new Date().getMonth(); // 0-11
-if (m >= 6 && m <= 8) return 'Q1';
-if (m >= 9 && m <= 11) return 'Q2';
-if (m >= 0 && m <= 2) return 'Q3';
-return 'Q4';
-}
-function initials(name) {
-if (!name) return '?';
-return name.split(' ').filter(Boolean).slice(0,2).map(w => w[0]).join('').toUpperCase();
-}
-function statusLabel(s) { return (s || '').replace(/_/g, ' '); }
-// Role labels used ONLY in the admin "New/Edit User" modal and the Users
-// table — a display-only relabeling for that screen. Every other place in
-// the system (login screen, sidebar, requisition forms, notifications,
-// approval history, etc.) still uses the original role names via
-// statusLabel(), and the underlying role codes stored in the database are
-// unchanged.
-const ADMIN_USER_ROLE_LABELS = {
-staff: 'Requisitioner',
-hod: 'First Level Approver',
-treasurer: 'Budget Controller',
-clerk: 'Accounting Officer',
-admin: 'Local System Administrator',
-};
-function adminRoleLabel(role) { return ADMIN_USER_ROLE_LABELS[role] || statusLabel(role); }
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-// Strict separation of concern: shows a department using its NAME ONLY.
-// The PBS department code is a distinct identifier and is intentionally
-// never appended here — this is used for the Departments page's own
-// Department column, user records, requisitions, dept-output charts, etc.
-function deptLabel(d) { if (!d) return null; return d.name; }
-// Shows a department as "<code>: <name>" (e.g. "090: Community Based
-// Services"). Used for the Annual Work Plan & Budget Estimates table's
-// Department column (via the backend-supplied `department_code_and_name`
-// field on each budget code — see renderBudgetCodes()), the Department
-// Budget Summary table (renderDeptSummaryTable()), and every dropdown that
-// lists departments (Work Plan filter, Budget Code form, Requisition form,
-// User form — see loadDepartments()). NOT used for the Departments page's
-// own Department column, which shows name alone via deptLabel() above.
-function deptLabelWithCode(d) { if (!d) return null; return d.code ? `${d.code}: ${d.name}` : d.name; }
-// ---- Multi-point text formatting (e.g. Functional Definition cells) --------
-// Renders a block of text as one line per "point" instead of one continuous
-// run-on line. If the source text already contains real line breaks, each
-// line becomes its own point. Otherwise, if it looks like it packs several
-// numbered/lettered/bulleted points onto a single line (e.g. "1. ... 2. ..."
-// or "(a) ... (b) ..." or "• ... • ..."), it is split at those markers so
-// each point still starts on a new line.
-function formatMultilinePoints(text) {
-if (text === null || text === undefined || String(text).trim() === '') return '—';
-let normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-let points = normalized.split('\n').map(s => s.trim()).filter(Boolean);
-if (points.length <= 1) {
-const candidate = normalized.trim();
-const parts = candidate
-.split(/(?=\d+\s*[.)]\s+)|(?=\([a-zA-Z0-9]+\)\s+)|(?=[•▪‣•]\s+)/g)
-.map(s => s.trim())
-.filter(Boolean);
-points = parts.length > 1 ? parts : [candidate];
-}
-return points.map(p => escapeHtml(p)).join('<br>');
-}
-// ---- Number-to-words (for the "Amount in words" line on the printed form) --
-function numberToWords(n) {
-n = Math.floor(Math.abs(Number(n) || 0));
-const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
-'Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-function chunk(num) {
-let str = '';
-if (num >= 100) { str += ones[Math.floor(num / 100)] + ' Hundred '; num %= 100; }
-if (num >= 20) { str += tens[Math.floor(num / 10)] + ' '; num %= 10; }
-if (num > 0) { str += ones[num] + ' '; }
-return str.trim();
-}
-if (n === 0) return 'Zero';
-const units = [{ v: 1000000000, l: 'Billion' }, { v: 1000000, l: 'Million' }, { v: 1000, l: 'Thousand' }, { v: 1, l: '' }];
-let result = '';
-let remainder = n;
-for (const u of units) {
-if (remainder >= u.v) {
-const count = Math.floor(remainder / u.v);
-result += chunk(count) + (u.l ? ' ' + u.l + ' ' : ' ');
-remainder %= u.v;
-}
-}
-return result.trim().replace(/\s+/g, ' ');
-}
-function numberToWordsUGX(amount) {
-const rounded = Math.round(Number(amount) || 0);
-if (rounded === 0) return 'Zero shillings only';
-return `${numberToWords(rounded)} Shillings Only`;
-}
-// ---- Auth ---------------------------------------------------------------------
-document.getElementById('login-password-toggle').addEventListener('click', () => {
-const input = document.getElementById('login-password');
-const btn = document.getElementById('login-password-toggle');
-const showing = input.type === 'text';
-input.type = showing ? 'password' : 'text';
-btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-btn.title = showing ? 'Show password' : 'Hide password';
-btn.innerHTML = showing
-? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>'
-: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.4 19.4 0 0 1 4.22-5.06M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 7 11 7a19.5 19.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
-});
-document.getElementById('login-form').addEventListener('submit', async (e) => {
-e.preventDefault();
-const role = document.getElementById('login-role').value;
-const email = document.getElementById('login-email').value.trim();
-const password = document.getElementById('login-password').value;
-const errEl = document.getElementById('login-error');
-const btn = document.getElementById('login-btn');
-errEl.style.display = 'none';
-if (!role) {
-errEl.textContent = 'Please select the role you are signing in as.';
-errEl.style.display = 'block';
-return;
-}
-btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing in…';
-try {
-const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, role }) });
-STATE.token = data.access_token; STATE.role = data.role; STATE.name = data.full_name; STATE.userId = data.user_id;
-localStorage.setItem('ktc_token', STATE.token);
-localStorage.setItem('ktc_role', STATE.role);
-localStorage.setItem('ktc_name', STATE.name);
-localStorage.setItem('ktc_user_id', STATE.userId);
-enterApp();
-} catch (err) {
-errEl.textContent = err.message || 'Unable to sign in. Please check your credentials.';
-errEl.style.display = 'block';
-} finally {
-btn.disabled = false; btn.innerHTML = 'Sign in to your account';
-}
-});
-function logout() {
-STATE = { ...STATE, token: null, role: null, name: null, userId: null, signatureUrl: null, email: null, position: null };
-localStorage.removeItem('ktc_token'); localStorage.removeItem('ktc_role');
-localStorage.removeItem('ktc_name'); localStorage.removeItem('ktc_user_id');
-document.getElementById('app-screen').style.display = 'none';
-document.getElementById('login-screen').style.display = 'flex';
-stopIdleTimer();
-}
-document.getElementById('logout-btn').addEventListener('click', logout);
-// ---- Inactivity auto-logout (10 minutes) ----------------------------------
-// The session token itself is now long-lived — signing a user out is
-// handled here, purely based on real inactivity, so an actively-working
-// user is never logged out mid-task the way a fixed-lifetime token used to.
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
-let idleTimer = null;
-function resetIdleTimer() {
-if (!STATE.token) return;
-clearTimeout(idleTimer);
-idleTimer = setTimeout(() => {
-if (STATE.token) {
-logout();
-toast('You have been signed out after 10 minutes of inactivity', 'error');
-}
-}, IDLE_TIMEOUT_MS);
-}
-function stopIdleTimer() {
-clearTimeout(idleTimer);
-idleTimer = null;
-}
-['mousedown', 'mousemove', 'keydown', 'wheel', 'scroll', 'touchstart', 'click'].forEach(evt => {
-document.addEventListener(evt, () => { if (STATE.token) resetIdleTimer(); }, { passive: true });
-});
-async function enterApp() {
-document.getElementById('login-screen').style.display = 'none';
-document.getElementById('app-screen').style.display = 'block';
-document.getElementById('sb-name').textContent = STATE.name;
-document.getElementById('sb-role').textContent = statusLabel(STATE.role);
-document.getElementById('sb-avatar').textContent = initials(STATE.name);
-document.getElementById('admin-nav-group').style.display = (STATE.role === 'admin') ? 'block' : 'none';
-applyRoleVisibility();
-await loadDepartments();
-await loadWorkplans();
-switchView('dashboard');
-refreshNotifications();
-setInterval(refreshNotifications, 30000);
-api('/api/auth/me').then(me => { STATE.signatureUrl = me.signature_url || null; STATE.departmentId = me.department_id || null; STATE.email = me.email || null; STATE.position = me.position || null; STATE.telephone = me.telephone || null; }).catch(() => {});
-resetIdleTimer();
-}
-function applyRoleVisibility() {
-const navMap = {
-approvals: ['hod', 'treasurer', 'clerk', 'admin'],
-accountability: ['auditor', 'admin'],
-reports: ['admin', 'auditor', 'clerk', 'treasurer', 'hod', 'staff'],
-};
-document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
-const v = btn.dataset.view;
-if (navMap[v] && !navMap[v].includes(STATE.role)) btn.style.display = 'none';
-else btn.style.display = 'flex';
-});
-document.getElementById('wp-new-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-new-workplan-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-edit-workplan-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-import-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-new-revenue-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-import-revenue-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('new-req-btn').style.display = (['staff','hod','admin'].includes(STATE.role)) ? 'inline-flex' : 'none';
-document.getElementById('qa-new-req').style.display = (['staff','hod','admin'].includes(STATE.role)) ? 'block' : 'none';
-document.getElementById('wp-revenue-clear-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-document.getElementById('wp-clear-btn').style.display = (STATE.role === 'admin') ? 'inline-flex' : 'none';
-}
-// ---- Navigation -----------------------------------------------------------
-const VIEW_TITLES = {
-dashboard: ['Dashboard', 'Overview of financial activity'],
-workplan: ['Programme-Based Budgeting System (PBS) and Integrated Financial Management System (IFMS)', ''],
-requisitions: ['Requisitions', 'Requisition tracking and submission'],
-approvals: ['Approvals', 'Three-stage approval workflow'],
-accountability: ['Accountability', 'Post-approval documentation and verification'],
-reports: ['Audit & Reports', 'System-wide activity and audit trail'],
-users: ['Users & Roles', 'Account and access management'],
-departments: ['Departments', 'Organisational structure'],
-};
-function switchView(view) {
-document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-document.getElementById('view-' + view).classList.add('active');
-document.getElementById('topbar-title').textContent = VIEW_TITLES[view][0];
-document.getElementById('topbar-sub').textContent = VIEW_TITLES[view][1];
-const topbarTitleEl = document.getElementById('topbar-title');
-const topbarTitleWrap = document.getElementById('topbar-title-wrap');
-const topbarSubEl = document.getElementById('topbar-sub');
-const isWorkplanView = (view === 'workplan');
-topbarTitleEl.classList.toggle('topbar-title-lg', isWorkplanView);
-topbarTitleWrap.classList.toggle('topbar-title-wrap-center', isWorkplanView);
-topbarSubEl.style.display = isWorkplanView ? 'none' : '';
-document.querySelector('.topbar').classList.toggle('topbar-workplan', isWorkplanView);
-closeNotifPanel();
-if (view === 'dashboard') loadDashboard();
-if (view === 'workplan') loadWorkplanView();
-if (view === 'requisitions') loadRequisitions();
-if (view === 'approvals') loadApprovals();
-if (view === 'accountability') loadAccountability();
-if (view === 'reports') loadAuditLog();
-if (view === 'users') loadUsers();
-if (view === 'departments') loadDepartmentsView();
-}
-document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
-btn.addEventListener('click', () => { switchView(btn.dataset.view); closeSidebar(); });
-});
-document.querySelectorAll('[data-view-link]').forEach(btn => {
-btn.addEventListener('click', () => { switchView(btn.dataset.viewLink); closeSidebar(); });
-});
-// ---- Mobile sidebar (hamburger) --------------------------------------------
-function openSidebar() {
-document.querySelector('.sidebar').classList.add('open');
-document.getElementById('sidebar-backdrop').classList.add('show');
-}
-function closeSidebar() {
-document.querySelector('.sidebar').classList.remove('open');
-document.getElementById('sidebar-backdrop').classList.remove('show');
-}
-function toggleSidebar() {
-const sb = document.querySelector('.sidebar');
-if (sb.classList.contains('open')) closeSidebar(); else openSidebar();
-}
-document.getElementById('hamburger-btn').addEventListener('click', toggleSidebar);
-document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
-// ---- Modals -----------------------------------------------------------------
-function openModal(id) { document.getElementById(id).classList.add('show'); }
-function closeModal(id) {
-const overlay = document.getElementById(id);
-overlay.classList.remove('show');
-// Reset to normal size on close so the next time it's opened it starts
-// un-maximized, rather than remembering the last maximize state.
-const modal = overlay.querySelector('.modal');
-if (modal) modal.classList.remove('modal-maximized');
-overlay.classList.remove('overlay-maximized');
-const btn = document.getElementById(id + '-max-btn');
-if (btn) { btn.textContent = '⛶'; btn.title = 'Maximize'; }
-}
-document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => closeModal(el.dataset.close)));
-// Toggles a modal (by its overlay id) between its normal centred size and
-// a fullscreen size that fills the entire page — used by the Requisition
-// form and Requisition view/detail modals so their wide tables get room
-// to expand instead of scrolling in a small box. Toggling again (minimize)
-// restores the modal to its original size.
-function toggleModalMaximize(modalId) {
-const overlay = document.getElementById(modalId);
-if (!overlay) return;
-const modal = overlay.querySelector('.modal');
-if (!modal) return;
-const maximized = modal.classList.toggle('modal-maximized');
-overlay.classList.toggle('overlay-maximized', maximized);
-const btn = document.getElementById(modalId + '-max-btn');
-if (btn) { btn.textContent = maximized ? '⧉' : '⛶'; btn.title = maximized ? 'Minimize' : 'Maximize'; }
-}
-document.querySelectorAll('.overlay').forEach(ov => ov.addEventListener('click', (e) => { if (e.target === ov && ov.id !== 'modal-req') ov.classList.remove('show'); }));
-// ---- My Settings (profile only — signature now lives on the New/Edit User modal) --------
-document.getElementById('user-chip-btn').addEventListener('click', openSettingsModal);
-async function openSettingsModal() {
-openModal('modal-settings');
-document.getElementById('set-name').textContent = STATE.name || '—';
-document.getElementById('set-role').textContent = statusLabel(STATE.role);
-try {
-const me = await api('/api/auth/me');
-document.getElementById('set-name').textContent = me.full_name || '—';
-document.getElementById('set-role').textContent = statusLabel(me.role);
-document.getElementById('set-email').textContent = me.email || '—';
-const dept = STATE.departments.find(d => d.id === me.department_id);
-document.getElementById('set-dept').textContent = deptLabel(dept) || '—';
-STATE.signatureUrl = me.signature_url || null;
-} catch (e) { toast(e.message, 'error'); }
-}
-// ---- Notifications ------------------------------------------------------------
-document.getElementById('notif-btn').addEventListener('click', async () => {
-const panel = document.getElementById('notif-panel');
-panel.classList.toggle('show');
-if (panel.classList.contains('show')) await renderNotifications();
-});
-function closeNotifPanel() { document.getElementById('notif-panel').classList.remove('show'); }
-document.getElementById('mark-all-read').addEventListener('click', async () => {
-await api('/api/notifications/read-all', { method: 'PATCH' });
-refreshNotifications(); renderNotifications();
-});
-async function refreshNotifications() {
-try {
-const items = await api('/api/notifications?unread_only=true');
-const badge = document.getElementById('notif-badge');
-if (items.length > 0) { badge.style.display = 'flex'; badge.textContent = items.length > 9 ? '9+' : items.length; }
-else badge.style.display = 'none';
-} catch (e) { /* silent */ }
-}
-async function renderNotifications() {
-const list = document.getElementById('notif-list');
-list.innerHTML = '<div class="loading-row"><span class="spinner spinner-dark"></span></div>';
-try {
-const items = await api('/api/notifications');
-if (items.length === 0) { list.innerHTML = '<div class="notif-empty">You have no notifications yet.</div>'; return; }
-list.innerHTML = items.map(n => `
-<div class="notif-item ${n.is_read ? '' : 'unread'}">
-<div class="dot"></div>
-<div><div class="msg">${escapeHtml(n.message)}</div><div class="time">${fmtDate(n.created_at)}</div></div>
-</div>`).join('');
-} catch (e) { list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>'; }
-}
-// ---- Departments / Work Plans (shared reference data) --------------------------
-async function loadDepartments() {
-STATE.departments = await api('/api/departments');
-const selects = ['wp-dept-filter', 'u-department', 'bc-department', 'req-form-department'];
-selects.forEach(id => {
-const el = document.getElementById(id);
-if (!el) return;
-const keepFirst = id === 'wp-dept-filter';
-el.innerHTML = (keepFirst ? '<option value="">All Departments</option>' : '<option value="">— Select —</option>') +
-STATE.departments.map(d => `<option value="${d.id}">${escapeHtml(deptLabelWithCode(d))}</option>`).join('');
-});
-}
-async function loadWorkplans() {
-STATE.workplans = await api('/api/workplans');
-const wpSel = document.getElementById('wp-select');
-const bcSel = document.getElementById('bc-workplan');
-const revSel = document.getElementById('rev-workplan');
-const opts = STATE.workplans.map(w => `<option value="${w.id}" style="text-align:center;">${escapeHtml(w.title)} — FY ${escapeHtml(w.financial_year)}</option>`).join('');
-if (wpSel) wpSel.innerHTML = opts || '<option value="">No work plans yet</option>';
-if (bcSel) bcSel.innerHTML = opts || '<option value="">No work plans yet</option>';
-if (revSel) revSel.innerHTML = opts || '<option value="">No work plans yet</option>';
-applyWorkplanTableTitles();
-}
-// ---- Work-plan table headings (the 4 Work Plan & Budget table titles) --------------
-// Each work plan carries its own heading for the 4 tables below; switching
-// the "Annual Work Plan" dropdown swaps all 4 headings to match. They are
-// only ever edited from the New/Edit Work Plan modal (see wpn-* fields).
-const WORKPLAN_TABLE_TITLE_FIELDS = {
-'wp-title-revenue-summary': 'title_revenue_summary',
-'wp-title-dept-summary': 'title_dept_summary',
-'wp-title-revenue-detail': 'title_revenue_detail',
-'wp-title-main-table': 'title_main_table',
-};
-function applyWorkplanTableTitles() {
-const wpVal = document.getElementById('wp-select').value;
-const wp = STATE.workplans.find(w => String(w.id) === String(wpVal));
-for (const [elId, field] of Object.entries(WORKPLAN_TABLE_TITLE_FIELDS)) {
-const el = document.getElementById(elId);
-if (el && wp && wp[field]) el.textContent = wp[field];
-}
-}
-// ---- Dashboard -----------------------------------------------------------------
-async function loadDashboard() {
-try {
-const s = await api('/api/dashboard/stats');
-document.getElementById('stat-pending').textContent = s.pending_approvals;
-document.getElementById('stat-approved').textContent = s.approved_requisitions;
-document.getElementById('stat-rejected').textContent = s.rejected_requisitions;
-document.getElementById('stat-budget').textContent = money(s.total_budget);
-document.getElementById('util-pct').textContent = s.utilization_pct + '%';
-document.getElementById('util-bar').style.width = Math.min(s.utilization_pct, 100) + '%';
-document.getElementById('util-detail').textContent = `UGX ${money(s.budget_utilized)} committed of UGX ${money(s.total_budget)} allocated`;
-const list = document.getElementById('recent-activity-list');
-if (s.recent_activity.length === 0) {
-list.innerHTML = '<li class="empty-state" style="padding:20px 0;">No activity recorded yet.</li>';
-} else {
-list.innerHTML = s.recent_activity.map(r => `
-<li>
-<div class="tl-stamp">${statusIcon(r.status)}</div>
-<div class="tl-body">
-<div class="tl-title">${r.ref_no} <span class="pill pill-${r.status}" style="margin-left:6px;">${statusLabel(r.status)}</span></div>
-<div class="tl-meta">${escapeHtml(r.department || '—')} • UGX ${money(r.amount)} • ${fmtDate(r.created_at)}</div>
-</div>
-</li>`).join('');
-}
-renderDeptChart(s.budget_by_department || []);
-} catch (e) { toast(e.message, 'error'); }
-}
-function statusIcon(status) {
-if (['approved','accounted'].includes(status)) return '✓';
-if (status === 'rejected') return '✕';
-if (status === 'returned') return '↺';
-return '…';
-}
-document.getElementById('qa-new-req').addEventListener('click', () => openRequisitionModal());
-function renderDeptChart(data) {
-const el = document.getElementById('dept-chart');
-if (!el) return;
-if (!data || data.length === 0) {
-el.innerHTML = '<div class="empty-state" style="padding:20px;">No budget data yet.</div>';
-return;
-}
-const sorted = [...data].sort((a, b) => (b.amount || 0) - (a.amount || 0));
-const max = Math.max(...sorted.map(d => Number(d.amount) || 0), 1);
-const palette = ['var(--teal-600)', 'var(--gold-600)', 'var(--navy-900)', 'var(--teal-500)', 'var(--danger)', 'var(--info)'];
-el.innerHTML = sorted.map((d, i) => {
-const pct = Math.max((Number(d.amount) || 0) / max * 100, 1.5);
-return `
-<div style="margin-bottom:14px;">
-<div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; margin-bottom:5px; gap:10px;">
-<span style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(d.department)}</span>
-<span class="mono" style="color:var(--ink-500); flex-shrink:0;">UGX ${money(d.amount)}</span>
-</div>
-<div class="util-bar-track">
-<div class="util-bar-fill" style="width:${pct}%; background:${palette[i % palette.length]}; box-shadow:none;"></div>
-</div>
-</div>`;
-}).join('');
-}
-// ---- Work Plan & Budget view -----------------------------------------------------
-async function loadWorkplanView() {
-await loadWorkplans();
-await renderBudgetCodes();
-await renderRevenueSources();
-}
-document.getElementById('wp-select').addEventListener('change', () => { applyWorkplanTableTitles(); renderBudgetCodes(); renderRevenueSources(); });
-document.getElementById('wp-download-pdf-btn').addEventListener('click', downloadWorkPlanPdf);
-// Fetches the PDF as a blob (auth header can't ride a plain <a href>) and triggers a save.
-async function downloadWorkPlanPdf() {
-const wpId = document.getElementById('wp-select').value;
-if (!wpId) { toast('Select a work plan first', 'error'); return; }
-const btn = document.getElementById('wp-download-pdf-btn');
-btn.disabled = true;
-try {
-const res = await fetch(`${API_BASE}/api/work-plans/${wpId}/report-pdf`, { headers: { Authorization: 'Bearer ' + STATE.token } });
-if (!res.ok) throw new Error('Could not generate the PDF');
-const blob = await res.blob();
-const url = URL.createObjectURL(blob);
-const a = document.createElement('a');
-a.href = url;
-a.download = `Annual_Work_Plan_FY_${document.getElementById('wp-fy-title').textContent.replace('/', '-')}.pdf`;
-document.body.appendChild(a); a.click(); a.remove();
-URL.revokeObjectURL(url);
-} catch (e) { toast(e.message, 'error'); }
-finally { btn.disabled = false; }
-}
-document.getElementById('wp-dept-filter').addEventListener('change', renderBudgetCodes);
-document.getElementById('wp-search').addEventListener('input', debounce(renderBudgetCodes, 300));
-// Renders the "Revenue Sources Summary" table (unchanged, per Council request)
-// AND the new "Revenue Source by Category for the FY 2026/27" detail (categories with sub rows) that
-// appears right after the summary. The summary's Approved Budget Amount for
-// each source is obtained automatically on the backend as the Category Total
-// (sum of that source's sub-row Approved Estimates).
-async function renderRevenueSources() {
-  const tbody = document.getElementById('wp-revenue-summary-body');
-  const totalEl = document.getElementById('wp-revenue-summary-total');
-  tbody.innerHTML = '<tr><td colspan="3" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-  const wpId = document.getElementById('wp-select').value;
-  try {
-    let path = '/api/revenue-sources';
-    if (wpId) path += `?work_plan_id=${wpId}`;
-    const sources = await api(path);
-    STATE.revenueSources = sources;
-    renderRevenueDetailTable(sources);
+    return StreamingResponse(
+        _stream(b2_response["Body"]),
+        status_code=status_code,
+        headers=headers,
+        media_type=content_type,
+    )
 
-    // Sum each matching source's Category Total (auto-derived from its sub
-    // rows) into one of the three fixed Council revenue categories.
-    const categoryTotals = { gou: 0, lr: 0, mdp: 0 };
-    sources.forEach(r => {
-      const key = categorizeRevenueSource(r);
-      if (key) categoryTotals[key] += Number(r.approved_budget_amount) || 0;
-    });
 
-    tbody.innerHTML = REVENUE_SUMMARY_CATEGORIES.map(cat => `
-      <tr>
-        <td>${escapeHtml(cat.pbs_fund_code)} — ${escapeHtml(cat.source_of_financing_name)}</td>
-        <td class="rev-func-def">${formatMultilinePoints(cat.functional_definition)}</td>
-        <td class="num mono">${money(categoryTotals[cat.key])}</td>
-      </tr>`).join('');
+# ---------------------------- Accountability --------------------------------
 
-    const total = categoryTotals.gou + categoryTotals.lr + categoryTotals.mdp;
-    totalEl.textContent = 'UGX ' + money(total);
-  } catch (e) {
-    // Even on error, keep the three fixed rows visible with zeroed amounts
-    // rather than an empty-state message, since their content is constant.
-    tbody.innerHTML = REVENUE_SUMMARY_CATEGORIES.map(cat => `
-      <tr>
-        <td>${escapeHtml(cat.pbs_fund_code)} — ${escapeHtml(cat.source_of_financing_name)}</td>
-        <td class="rev-func-def">${formatMultilinePoints(cat.functional_definition)}</td>
-        <td class="num mono">0</td>
-      </tr>`).join('');
-    totalEl.textContent = 'UGX 0';
-    toast(e.message, 'error');
-    renderRevenueDetailTable([]);
-  }
-}
-// Renders the "Revenue Source by Category for the FY 2026/27": one category head row per revenue source
-// (PBS Fund Code + Revenue Source + Functional Definition title), its sub rows
-// (revenue items with Approved Estimates), an inline "+ Sub Row" adder and an
-// Auto Category Total row (sum of sub rows) — mirroring the Council's sheet.
-function renderRevenueDetailTable(sources) {
-const tbody = document.getElementById('wp-revenue-detail-body');
-if (!sources || sources.length === 0) {
-tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:16px;">No revenue sources recorded for this work plan yet. Use "+ Add Revenue Sources" below to create the first category with its sub rows.</div></td></tr>';
-return;
-}
-const admin = STATE.role === 'admin';
-let html = '';
-sources.forEach(r => {
-const items = r.items || [];
-const total = (r.category_total != null) ? Number(r.category_total) : (Number(r.approved_budget_amount) || 0);
-html += `
-<tr class="rev-cat-head">
-<td class="mono">${escapeHtml(r.pbs_fund_code || '—')}</td>
-<td class="wrap">${escapeHtml(r.source_of_financing_name || '—')}</td>
-<td class="wrap rev-func-def">${formatMultilinePoints(r.functional_definition)}</td>
-<td></td>
-<td></td>
-<td style="white-space:nowrap; text-align:right;">${admin ? `
-<button class="btn btn-ghost" style="padding:4px 8px; font-size:10.5px;" onclick="toggleRevAddItemRow(${r.id})">+ Sub Row</button>
-<button class="btn btn-ghost" style="padding:4px 8px; font-size:10.5px; margin-left:4px;" onclick="openEditRevenueSource(${r.id})">Edit</button>
-<button class="btn btn-danger" style="padding:4px 8px; font-size:10.5px; margin-left:4px;" onclick="deleteRevenueSource(${r.id})">Delete</button>` : ''}</td>
-</tr>`;
-items.forEach(it => {
-html += `
-<tr class="rev-item-row">
-<td></td>
-<td></td>
-<td class="rev-item-desc wrap">${escapeHtml(it.description)}</td>
-<td class="num mono">${money(it.amount)}</td>
-<td></td>
-<td style="text-align:right;">${admin ? `<button class="btn btn-ghost" style="padding:3px 7px; font-size:10.5px;" title="Remove sub row" onclick="deleteRevItem(${it.id})">✕</button>` : ''}</td>
-</tr>`;
-});
-html += `
-<tr class="rev-add-row" id="rev-add-row-${r.id}" style="display:none;">
-<td></td>
-<td></td>
-<td><input type="text" id="rev-new-item-desc-${r.id}" placeholder="Revenue item, e.g. Unconditional Grant – Non-Wage" /></td>
-<td><input type="number" id="rev-new-item-amt-${r.id}" value="0" /></td>
-<td></td>
-<td style="white-space:nowrap; text-align:right;">
-<button class="btn btn-primary" style="padding:4px 8px; font-size:10.5px;" onclick="saveRevNewItem(${r.id})">Save</button>
-<button class="btn btn-ghost" style="padding:4px 8px; font-size:10.5px; margin-left:4px;" onclick="toggleRevAddItemRow(${r.id})">✕</button>
-</td>
-</tr>
-<tr class="rev-total-row">
-<td></td>
-<td></td>
-<td>Category Total</td>
-<td></td>
-<td class="num mono">${money(total)}<span class="rev-auto-chip">Auto</span></td>
-<td></td>
-</tr>`;
-});
-tbody.innerHTML = html;
-}
-function toggleRevAddItemRow(id) {
-const row = document.getElementById('rev-add-row-' + id);
-if (!row) return;
-row.style.display = (row.style.display === 'none') ? 'table-row' : 'none';
-if (row.style.display !== 'none') {
-const f = document.getElementById('rev-new-item-desc-' + id);
-if (f) f.focus();
-}
-}
-async function saveRevNewItem(id) {
-const descEl = document.getElementById('rev-new-item-desc-' + id);
-const amtEl = document.getElementById('rev-new-item-amt-' + id);
-const desc = (descEl.value || '').trim();
-const amt = Number(amtEl.value || 0);
-if (!desc) { toast('Please enter the revenue item description', 'error'); return; }
-try {
-await api(`/api/revenue-sources/${id}/items`, { method: 'POST', body: JSON.stringify({ description: desc, amount: amt }) });
-toast('Sub row added — Category Total and Summary updated', 'success');
-renderRevenueSources();
-} catch (e) { toast(e.message, 'error'); }
-}
-async function deleteRevItem(itemId) {
-if (!confirm('Remove this sub row? The Category Total and the Summary of Sources of Revenue will update automatically.')) return;
-try {
-await api(`/api/revenue-source-items/${itemId}`, { method: 'DELETE' });
-toast('Sub row removed', 'success');
-renderRevenueSources();
-} catch (e) { toast(e.message, 'error'); }
-}
-// ---- Clear all: Revenue Sources (source of revenue table) --------------------
-document.getElementById('wp-revenue-clear-btn').addEventListener('click', async () => {
-const wpId = document.getElementById('wp-select').value;
-if (!wpId) { toast('Please select a work plan first', 'error'); return; }
-if (!confirm('Clear ALL revenue sources (and their sub rows) for this work plan? This cannot be undone.')) return;
-// Empty the tables on screen immediately so the clear feels instant, rather
-// than waiting on the network round trip before anything visibly changes.
-document.getElementById('wp-revenue-detail-body').innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:16px;">Clearing…</div></td></tr>';
-document.getElementById('wp-revenue-summary-body').innerHTML = '<tr><td colspan="3" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const result = await api(`/api/revenue-sources/clear?work_plan_id=${wpId}`, { method: 'DELETE' });
-toast(`Cleared ${result.deleted} revenue source(s)`, 'success');
-} catch (e) { toast(e.message, 'error'); } finally {
-renderRevenueSources();
-}
-});
-// ---- Clear all: Annual Work Plan / Budget Estimates ---------------------------
-document.getElementById('wp-clear-btn').addEventListener('click', async () => {
-const wpId = document.getElementById('wp-select').value;
-if (!wpId) { toast('Please select a work plan first', 'error'); return; }
-if (!confirm('Clear ALL activity & budget estimate rows for this work plan? This cannot be undone.')) return;
-// Empty the main table and the dependent Department Budget Summary table
-// on screen immediately, before the request even resolves.
-document.getElementById('wp-table-body').innerHTML = '<tr><td colspan="20"><div class="empty-state" style="padding:16px;">Clearing…</div></td></tr>';
-renderDeptSummaryTable([]);
-try {
-const result = await api(`/api/budget-codes/clear?work_plan_id=${wpId}`, { method: 'DELETE' });
-let msg = `Cleared ${result.deleted} budget estimate row(s)`;
-if (result.skipped) msg += `, ${result.skipped} skipped (have requisitions on record)`;
-toast(msg, 'success');
-} catch (e) { toast(e.message, 'error'); } finally {
-renderBudgetCodes();
-}
-});
-// Renders the "Department Budget Summary" table in the work-plan header.
-function renderDeptSummaryTable(codes) {
-const tbody = document.getElementById('wp-dept-summary-body');
-const totalsIds = { q1: 'wp-summary-q1', q2: 'wp-summary-q2', q3: 'wp-summary-q3', q4: 'wp-summary-q4', total: 'wp-summary-total', uncommitted: 'wp-summary-uncommitted' };
-if (!codes || codes.length === 0) {
-tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="padding:16px;">No budget codes to summarise.</div></td></tr>';
-Object.values(totalsIds).forEach(id => document.getElementById(id).textContent = 'UGX 0');
-return;
-}
-const map = {};
-codes.forEach(c => {
-const name = c.department_code_and_name || c.department_name || 'Unassigned';
-if (!map[name]) map[name] = { deptId: c.department_id, q1: 0, q2: 0, q3: 0, q4: 0, total: 0, uncommitted: 0 };
-map[name].q1 += Number(c.q1_amount) || 0;
-map[name].q2 += Number(c.q2_amount) || 0;
-map[name].q3 += Number(c.q3_amount) || 0;
-map[name].q4 += Number(c.q4_amount) || 0;
-map[name].total += Number(c.allocated_amount) || 0;
-map[name].uncommitted += Number(c.available_balance) || 0;
-});
-const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total);
-tbody.innerHTML = rows.map(([name, v]) => {
-return `
-<tr>
-<td>${escapeHtml(name)}</td>
-<td class="num mono">${money(v.q1)}</td>
-<td class="num mono">${money(v.q2)}</td>
-<td class="num mono">${money(v.q3)}</td>
-<td class="num mono">${money(v.q4)}</td>
-<td class="num mono">${money(v.total)}</td>
-<td class="num mono">${money(v.uncommitted)}</td>
-</tr>`;
-}).join('');
-const grand = rows.reduce((acc, [, v]) => {
-acc.q1 += v.q1; acc.q2 += v.q2; acc.q3 += v.q3; acc.q4 += v.q4; acc.total += v.total; acc.uncommitted += v.uncommitted;
-return acc;
-}, { q1: 0, q2: 0, q3: 0, q4: 0, total: 0, uncommitted: 0 });
-document.getElementById(totalsIds.q1).textContent = money(grand.q1);
-document.getElementById(totalsIds.q2).textContent = money(grand.q2);
-document.getElementById(totalsIds.q3).textContent = money(grand.q3);
-document.getElementById(totalsIds.q4).textContent = money(grand.q4);
-document.getElementById(totalsIds.total).textContent = money(grand.total);
-document.getElementById(totalsIds.uncommitted).textContent = money(grand.uncommitted);
-}
-function renderDeptOutputChart(codes) {
-const el = document.getElementById('wp-output-chart');
-if (!el) return;
-if (!codes || codes.length === 0) {
-el.innerHTML = '<div class="empty-state" style="padding:20px;">No budget data yet.</div>';
-return;
-}
-// Note: baseline_value/planned_target are a best-effort numeric figure —
-// for rows where the source workbook recorded a narrative or multi-part
-// value (see baseline_note/target_note, shown in the table and on hover),
-// this is only the first number found in that text, not a precise total.
-const map = {};
-codes.forEach(c => {
-const name = c.department_name || 'Unassigned';
-if (!map[name]) map[name] = { baseline: 0, target: 0, actual: 0, actualRows: 0, totalRows: 0 };
-map[name].baseline += Number(c.baseline_value) || 0;
-map[name].target += Number(c.planned_target) || 0;
-const av = parseNumericLoose(c.actual_output);
-if (av !== null) { map[name].actual += av; map[name].actualRows += 1; }
-map[name].totalRows += 1;
-});
-const rows = Object.entries(map).map(([name, v]) => ({
-name,
-baseline: v.baseline,
-target: v.target,
-actual: v.actual,
-actualRows: v.actualRows,
-totalRows: v.totalRows,
-variance: v.actual - v.target,
-achievementPct: v.target > 0 ? Math.round((v.actual / v.target) * 100) : (v.actual > 0 ? 100 : 0),
-})).sort((a, b) => b.target - a.target);
-const COLOR_BASELINE = '#6B7C80';
-const COLOR_TARGET = '#146B5F';
-const COLOR_ACTUAL = '#B9852F';
-const COLOR_TEXT = '#3B4C51';
-const COLOR_AXIS = '#C7D2D0';
-const maxVal = Math.max(...rows.map(r => Math.max(r.baseline, r.target, r.actual)), 1);
-const groupW = 170;
-const barW = 24;
-const gap = 4;
-const chartW = Math.max(600, rows.length * groupW);
-const chartH = 320;
-const baseline = chartH - 84;
-const plotH = baseline - 24;
-let bars = '';
-rows.forEach((r, i) => {
-const cx = i * groupW + groupW / 2;
-const bH = Math.max((r.baseline / maxVal) * plotH, 1);
-const tH = Math.max((r.target / maxVal) * plotH, 1);
-const aH = Math.max((r.actual / maxVal) * plotH, 1);
-const bx = cx - (barW * 1.5) - gap;
-const tx = cx - (barW / 2);
-const ax = cx + (barW / 2) + gap;
-const by = baseline - bH;
-const ty = baseline - tH;
-const ay = baseline - aH;
-const shortName = r.name.length > 15 ? r.name.slice(0, 14) + '…' : r.name;
-const varianceLabel = r.variance >= 0 ? `+${money(r.variance)}` : `−${money(Math.abs(r.variance))}`;
-const varianceColor = r.variance >= 0 ? '#1F8A5F' : '#B8382A';
-const reportedNote = r.actualRows < r.totalRows ? ` (${r.actualRows}/${r.totalRows} outputs reported numerically)` : '';
-bars += `
-<rect x="${bx}" y="${by}" width="${barW}" height="${bH}" rx="4" fill="${COLOR_BASELINE}"></rect>
-<text x="${bx + barW / 2}" y="${by - 5}" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, ui-monospace, monospace" fill="${COLOR_TEXT}">${money(r.baseline)}</text>
-<rect x="${tx}" y="${ty}" width="${barW}" height="${tH}" rx="4" fill="${COLOR_TARGET}"></rect>
-<text x="${tx + barW / 2}" y="${ty - 5}" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, ui-monospace, monospace" fill="${COLOR_TEXT}">${money(r.target)}</text>
-<rect x="${ax}" y="${ay}" width="${barW}" height="${aH}" rx="4" fill="${COLOR_ACTUAL}"></rect>
-<text x="${ax + barW / 2}" y="${ay - 5}" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, ui-monospace, monospace" fill="${COLOR_TEXT}">${money(r.actual)}</text>
-<text x="${cx}" y="${baseline + 20}" text-anchor="middle" font-size="10.5" font-weight="600" fill="${COLOR_TEXT}">${escapeHtml(shortName)}</text>
-<text x="${cx}" y="${baseline + 34}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${varianceColor}">${varianceLabel} vs target</text>
-<title>${escapeHtml(r.name)}: Baseline ${money(r.baseline)}, Target ${money(r.target)}, Actual ${money(r.actual)}${reportedNote} — ${r.achievementPct}% of target achieved</title>
-`;
-});
-el.innerHTML = `
-<div style="display:flex; gap:18px; align-items:center; margin-bottom:10px; font-size:11.5px; color:var(--ink-700); flex-wrap:wrap;">
-<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:12px;height:12px;border-radius:3px;background:${COLOR_BASELINE}; display:inline-block;"></span>Baseline Value</span>
-<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:12px;height:12px;border-radius:3px;background:${COLOR_TARGET}; display:inline-block;"></span>Planned Target</span>
-<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:12px;height:12px;border-radius:3px;background:${COLOR_ACTUAL}; display:inline-block;"></span>Actual Output Delivered</span>
-</div>
-<svg viewBox="0 0 ${chartW} ${chartH}" width="100%" height="${chartH}" style="min-width:${chartW}px; display:block;">
-<line x1="0" y1="${baseline}" x2="${chartW}" y2="${baseline}" stroke="${COLOR_AXIS}" stroke-width="1"></line>
-${bars}
-</svg>
-`;
-}
-function renderDeptPieChart(codes) {
-const el = document.getElementById('wp-pie-chart');
-if (!el) return;
-if (!codes || codes.length === 0) {
-el.innerHTML = '<div class="empty-state" style="padding:20px;">No budget data yet.</div>';
-return;
-}
-const map = {};
-codes.forEach(c => {
-const name = c.department_name || 'Unassigned';
-map[name] = (map[name] || 0) + (Number(c.allocated_amount) || 0);
-});
-const rows = Object.entries(map).sort((a, b) => b[1] - a[1]);
-const total = rows.reduce((s, [, v]) => s + v, 0) || 1;
-const palette = ['#146B5F', '#B9852F', '#0A1F2B', '#1C8577', '#B8382A', '#2E5E8C', '#6A3FA0', '#C99A3E', '#1F8A5F', '#6B7C80'];
-let acc = 0;
-const stops = rows.map(([, v], i) => {
-const pct = (v / total) * 100;
-const start = acc;
-acc += pct;
-return `${palette[i % palette.length]} ${start.toFixed(2)}% ${acc.toFixed(2)}%`;
-}).join(', ');
-const legend = rows.map(([name, v], i) => {
-const pct = ((v / total) * 100).toFixed(1);
-return `
-<div style="display:flex; align-items:center; gap:9px; font-size:12.5px; margin-bottom:8px;">
-<span style="width:12px;height:12px;border-radius:3px; background:${palette[i % palette.length]}; flex-shrink:0;"></span>
-<span style="font-weight:600; flex:0 1 auto; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(name)}</span>
-<span class="mono" style="color:var(--ink-500); flex-shrink:0;">UGX ${money(v)}</span>
-<span class="mono" style="color:var(--gold-600); font-weight:700; flex-shrink:0;">${pct}%</span>
-</div>`;
-}).join('');
-el.innerHTML = `
-<div style="width:200px; height:200px; border-radius:50%; background:conic-gradient(${stops}); flex-shrink:0; box-shadow:var(--shadow-sm); border:1px solid var(--line);"></div>
-<div style="flex:1; min-width:240px;">${legend}</div>
-`;
-}
-async function renderBudgetCodes() {
-const tbody = document.getElementById('wp-table-body');
-tbody.innerHTML = '<tr><td colspan="20" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-const wpId = document.getElementById('wp-select').value;
-const deptId = document.getElementById('wp-dept-filter').value;
-const search = document.getElementById('wp-search').value.trim();
-const wp = STATE.workplans.find(w => String(w.id) === String(wpId));
-document.getElementById('wp-fy-title').textContent = wp ? wp.financial_year : '—';
-try {
-let path = '/api/budget-codes?';
-if (wpId) path += `work_plan_id=${wpId}&`;
-if (deptId) path += `department_id=${deptId}&`;
-if (search) path += `search=${encodeURIComponent(search)}&`;
-const codes = await api(path);
-STATE.budgetCodes = codes;
-renderDeptSummaryTable(codes);
-if (codes.length === 0) {
-tbody.innerHTML = `<tr><td colspan="20"><div class="empty-state">No budget codes found. ${STATE.role === 'admin' ? 'Create one to get started.' : 'Ask your Administrator to set up the work plan.'}</div></td></tr>`;
-renderDeptOutputChart([]);
-renderDeptPieChart([]);
-return;
-}
-tbody.innerHTML = codes.map(c => `
-<tr>
-<td class="wrap">${escapeHtml(c.department_code_and_name || c.department_name || '—')}</td>
-<td class="wrap">${escapeHtml(c.service_area || '—')}</td>
-<td class="wrap">${escapeHtml(c.programme || '—')}</td>
-<td class="wrap">${escapeHtml(c.sub_programme || '—')}</td>
-<td class="mono">${escapeHtml(c.code)}</td>
-<td class="wrap">${escapeHtml(c.output_description)}</td>
-<td class="wrap">${escapeHtml(c.piap_output_description || '—')}</td>
-<td class="wrap">${escapeHtml(c.piap_output_indicator || '—')}</td>
-<td>${escapeHtml(c.unit_of_measure || '—')}</td>
-<td class="${c.baseline_note ? 'wrap' : 'num'}" ${c.baseline_note ? `title="Recorded as: ${escapeHtml(c.baseline_note)}"` : ''}>${c.baseline_note ? escapeHtml(c.baseline_note) : money(c.baseline_value)}</td>
-<td class="${c.target_note ? 'wrap' : 'num'}" ${c.target_note ? `title="Recorded as: ${escapeHtml(c.target_note)}"` : ''}>${c.target_note ? escapeHtml(c.target_note) : money(c.planned_target)}</td>
-<td class="wrap">${escapeHtml(c.actual_output || '—')}</td>
-<td class="num mono">${money(c.q1_amount)}</td>
-<td class="num mono">${money(c.q2_amount)}</td>
-<td class="num mono">${money(c.q3_amount)}</td>
-<td class="num mono">${money(c.q4_amount)}</td>
-<td class="num mono">${money(c.allocated_amount)}</td>
-<td class="wrap">${escapeHtml(c.funding_source)}</td>
-<td class="wrap">${escapeHtml(c.responsible_party || '—')}</td>
-<td style="white-space:nowrap;">${STATE.role === 'admin' ? `<button class="btn btn-ghost" style="padding:6px 10px;" onclick="openEditBudgetCode(${c.id})">Edit</button> <button class="btn btn-danger" style="padding:6px 10px; margin-left:4px;" onclick="deleteBudgetCode(${c.id})">Delete</button>` : ''}</td>
-</tr>`).join('');
-renderDeptOutputChart(codes);
-renderDeptPieChart(codes);
-} catch (e) {
-tbody.innerHTML = `<tr><td colspan="20"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`;
-renderDeptSummaryTable([]);
-renderDeptOutputChart([]);
-renderDeptPieChart([]);
-}
-}
-async function deleteBudgetCode(id) {
-const c = STATE.budgetCodes.find(x => x.id === id);
-if (!confirm(`Delete budget code ${c ? c.code : id}? This cannot be undone.`)) return;
-try {
-await api(`/api/budget-codes/${id}`, { method: 'DELETE' });
-toast('Budget estimate deleted', 'success');
-renderBudgetCodes();
-} catch (e) { toast(e.message, 'error'); }
-}
-function resetBudgetCodeForm() {
-STATE.editingBudgetCodeId = null;
-document.getElementById('bc-modal-title').textContent = 'New Budget Estimates Data Entry Form';
-document.getElementById('bc-create-btn').textContent = 'Create Budget Estimate';
-['bc-service-area','bc-code','bc-unit','bc-desc','bc-programme','bc-subprogramme','bc-piap-desc','bc-piap-indicator','bc-actual','bc-responsible','bc-baseline-note','bc-target-note'].forEach(id => document.getElementById(id).value = '');
-['bc-baseline','bc-target','bc-q1','bc-q2','bc-q3','bc-q4'].forEach(id => document.getElementById(id).value = 0);
-document.getElementById('bc-total').value = '0';
-document.getElementById('bc-funding').value = 'Local Revenue';
-}
-document.getElementById('wp-new-btn').addEventListener('click', () => {
-const wpVal = document.getElementById('wp-select').value;
-const deptVal = document.getElementById('wp-dept-filter').value;
-document.getElementById('bc-workplan').innerHTML = document.getElementById('wp-select').innerHTML;
-resetBudgetCodeForm();
-if (wpVal) document.getElementById('bc-workplan').value = wpVal;
-if (deptVal) document.getElementById('bc-department').value = deptVal;
-openModal('modal-bc');
-});
-function openEditBudgetCode(id) {
-const c = STATE.budgetCodes.find(x => x.id === id);
-if (!c) { toast('Could not find that budget code — try refreshing.', 'error'); return; }
-document.getElementById('bc-workplan').innerHTML = document.getElementById('wp-select').innerHTML;
-STATE.editingBudgetCodeId = id;
-document.getElementById('bc-modal-title').textContent = `Edit Budget Estimate — ${c.code}`;
-document.getElementById('bc-create-btn').textContent = 'Save Changes';
-document.getElementById('bc-workplan').value = c.work_plan_id;
-document.getElementById('bc-department').value = c.department_id;
-document.getElementById('bc-service-area').value = c.service_area || '';
-document.getElementById('bc-code').value = c.code || '';
-document.getElementById('bc-unit').value = c.unit_of_measure || '';
-document.getElementById('bc-desc').value = c.output_description || '';
-document.getElementById('bc-programme').value = c.programme || '';
-document.getElementById('bc-subprogramme').value = c.sub_programme || '';
-document.getElementById('bc-piap-desc').value = c.piap_output_description || '';
-document.getElementById('bc-piap-indicator').value = c.piap_output_indicator || '';
-document.getElementById('bc-actual').value = c.actual_output || '';
-document.getElementById('bc-baseline').value = c.baseline_value || 0;
-document.getElementById('bc-baseline-note').value = c.baseline_note || '';
-document.getElementById('bc-target').value = c.planned_target || 0;
-document.getElementById('bc-target-note').value = c.target_note || '';
-document.getElementById('bc-q1').value = c.q1_amount || 0;
-document.getElementById('bc-q2').value = c.q2_amount || 0;
-document.getElementById('bc-q3').value = c.q3_amount || 0;
-document.getElementById('bc-q4').value = c.q4_amount || 0;
-document.getElementById('bc-funding').value = c.funding_source || 'Local Revenue';
-document.getElementById('bc-responsible').value = c.responsible_party || '';
-recalcBcTotal();
-openModal('modal-bc');
-}
-function recalcBcTotal() {
-const q1 = Number(document.getElementById('bc-q1').value || 0);
-const q2 = Number(document.getElementById('bc-q2').value || 0);
-const q3 = Number(document.getElementById('bc-q3').value || 0);
-const q4 = Number(document.getElementById('bc-q4').value || 0);
-document.getElementById('bc-total').value = money(q1 + q2 + q3 + q4);
-}
-['bc-q1','bc-q2','bc-q3','bc-q4'].forEach(id => document.getElementById(id).addEventListener('input', recalcBcTotal));
-document.getElementById('bc-create-btn').addEventListener('click', async () => {
-const payload = {
-work_plan_id: Number(document.getElementById('bc-workplan').value),
-department_id: Number(document.getElementById('bc-department').value),
-service_area: document.getElementById('bc-service-area').value.trim(),
-code: document.getElementById('bc-code').value.trim(),
-output_description: document.getElementById('bc-desc').value.trim(),
-programme: document.getElementById('bc-programme').value.trim(),
-sub_programme: document.getElementById('bc-subprogramme').value.trim(),
-piap_output_description: document.getElementById('bc-piap-desc').value.trim(),
-piap_output_indicator: document.getElementById('bc-piap-indicator').value.trim(),
-unit_of_measure: document.getElementById('bc-unit').value.trim(),
-baseline_value: Number(document.getElementById('bc-baseline').value || 0),
-baseline_note: document.getElementById('bc-baseline-note').value.trim() || null,
-planned_target: Number(document.getElementById('bc-target').value || 0),
-target_note: document.getElementById('bc-target-note').value.trim() || null,
-actual_output: document.getElementById('bc-actual').value.trim(),
-q1_amount: Number(document.getElementById('bc-q1').value || 0),
-q2_amount: Number(document.getElementById('bc-q2').value || 0),
-q3_amount: Number(document.getElementById('bc-q3').value || 0),
-q4_amount: Number(document.getElementById('bc-q4').value || 0),
-funding_source: document.getElementById('bc-funding').value.trim() || 'Local Revenue',
-responsible_party: document.getElementById('bc-responsible').value.trim(),
-};
-if (!payload.work_plan_id || !payload.department_id || !payload.code || !payload.output_description) {
-toast('Please complete all required fields', 'error'); return;
-}
-try {
-if (STATE.editingBudgetCodeId) {
-await api(`/api/budget-codes/${STATE.editingBudgetCodeId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-toast('Budget estimate updated', 'success');
-} else {
-await api('/api/budget-codes', { method: 'POST', body: JSON.stringify(payload) });
-toast('Budget estimate created', 'success');
-}
-closeModal('modal-bc');
-renderBudgetCodes();
-} catch (e) { toast(e.message, 'error'); }
-});
-document.getElementById('wp-new-workplan-btn').addEventListener('click', () => {
-STATE.editingWorkPlanId = null;
-document.getElementById('wpn-modal-title').textContent = 'New Work Plan';
-document.getElementById('wpn-create-btn').textContent = 'Create Work Plan';
-document.getElementById('wpn-fy').value = '';
-document.getElementById('wpn-title').value = '';
-document.getElementById('wpn-title-revenue-summary').value = '';
-document.getElementById('wpn-title-dept-summary').value = '';
-document.getElementById('wpn-title-revenue-detail').value = '';
-document.getElementById('wpn-title-main-table').value = '';
-openModal('modal-wp');
-});
-document.getElementById('wp-edit-workplan-btn').addEventListener('click', () => {
-const wpVal = document.getElementById('wp-select').value;
-const wp = STATE.workplans.find(w => String(w.id) === String(wpVal));
-if (!wp) { toast('Please select a work plan to edit first', 'error'); return; }
-STATE.editingWorkPlanId = wp.id;
-document.getElementById('wpn-modal-title').textContent = `Edit Work Plan — ${wp.title}`;
-document.getElementById('wpn-create-btn').textContent = 'Save Changes';
-document.getElementById('wpn-fy').value = wp.financial_year;
-document.getElementById('wpn-title').value = wp.title;
-document.getElementById('wpn-title-revenue-summary').value = wp.title_revenue_summary || '';
-document.getElementById('wpn-title-dept-summary').value = wp.title_dept_summary || '';
-document.getElementById('wpn-title-revenue-detail').value = wp.title_revenue_detail || '';
-document.getElementById('wpn-title-main-table').value = wp.title_main_table || '';
-openModal('modal-wp');
-});
-document.getElementById('wpn-create-btn').addEventListener('click', async () => {
-const financial_year = document.getElementById('wpn-fy').value.trim();
-const title = document.getElementById('wpn-title').value.trim();
-const title_revenue_summary = document.getElementById('wpn-title-revenue-summary').value.trim();
-const title_dept_summary = document.getElementById('wpn-title-dept-summary').value.trim();
-const title_revenue_detail = document.getElementById('wpn-title-revenue-detail').value.trim();
-const title_main_table = document.getElementById('wpn-title-main-table').value.trim();
-if (!financial_year || !title) { toast('Please complete both fields', 'error'); return; }
-const payload = { financial_year, title, title_revenue_summary, title_dept_summary, title_revenue_detail, title_main_table };
-try {
-if (STATE.editingWorkPlanId) {
-await api(`/api/workplans/${STATE.editingWorkPlanId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-toast('Work plan updated', 'success');
-closeModal('modal-wp');
-await loadWorkplans();
-document.getElementById('wp-select').value = STATE.editingWorkPlanId;
-applyWorkplanTableTitles();
-renderBudgetCodes();
-renderRevenueSources();
-} else {
-const wp = await api('/api/workplans', { method: 'POST', body: JSON.stringify(payload) });
-toast('Work plan created', 'success');
-closeModal('modal-wp');
-await loadWorkplans();
-document.getElementById('wp-select').value = wp.id;
-applyWorkplanTableTitles();
-renderBudgetCodes();
-renderRevenueSources();
-}
-} catch (e) { toast(e.message, 'error'); }
-});
-// ---- Revenue Sources (category + sub rows) -----------------------------------
-function resetRevenueSourceForm() {
-STATE.editingRevenueSourceId = null;
-STATE.revItems = [];
-document.getElementById('rev-modal-title').textContent = 'New Revenue Source';
-document.getElementById('rev-create-btn').textContent = 'Create Revenue Source';
-populateRevDropdowns();
-for (const selectId of Object.keys(REV_FIELD_MAP)) {
-document.getElementById(selectId).value = '';
-setRevCustomVisible(selectId, false);
-}
-document.getElementById('rev-amount').value = 0;
-renderRevItems();
-}
-// Sub-row builder inside the Revenue Source form (mirrors the sub rows in the
-// Revenue Source by Category for the FY 2026/27 / reference image).
-function renderRevItems() {
-const tbody = document.getElementById('rev-items-body');
-if (!STATE.revItems.length) {
-tbody.innerHTML = '<tr><td colspan="3"><div class="help-text" style="padding:10px;">No sub rows yet — click "+ Add Sub Row" to add revenue items under the functional definition title.</div></td></tr>';
-return;
-}
-tbody.innerHTML = STATE.revItems.map((it, idx) => `
-<tr>
-<td class="wrap"><input type="text" value="${escapeHtml(it.description)}" placeholder="e.g. Unconditional Grant – Non-Wage" style="width:100%; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12.5px;" oninput="updateRevItem(${idx},'description',this.value)"/></td>
-<td><input type="number" value="${it.amount ?? 0}" style="width:130px; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12.5px; font-family:var(--font-mono);" oninput="updateRevItem(${idx},'amount',this.value)"/></td>
-<td><button type="button" class="btn btn-ghost" style="padding:5px 9px;" onclick="removeRevItem(${idx})">✕</button></td>
-</tr>`).join('');
-}
-function updateRevItem(idx, field, value) {
-const it = STATE.revItems[idx];
-if (!it) return;
-it[field] = (field === 'amount') ? Number(value || 0) : value;
-}
-function removeRevItem(idx) {
-STATE.revItems.splice(idx, 1);
-renderRevItems();
-}
-document.getElementById('rev-add-item-btn').addEventListener('click', () => {
-STATE.revItems.push({ description: '', amount: 0 });
-renderRevItems();
-});
-for (const selectId of Object.keys(REV_FIELD_MAP)) {
-document.getElementById(selectId).addEventListener('change', () => onRevCategorySelect(selectId));
-}
-document.getElementById('wp-new-revenue-btn').addEventListener('click', () => {
-const wpVal = document.getElementById('wp-select').value;
-document.getElementById('rev-workplan').innerHTML = document.getElementById('wp-select').innerHTML;
-resetRevenueSourceForm();
-if (wpVal) document.getElementById('rev-workplan').value = wpVal;
-openModal('modal-rev');
-});
-function openEditRevenueSource(id) {
-const r = STATE.revenueSources.find(x => x.id === id);
-if (!r) { toast('Could not find that revenue source — try refreshing.', 'error'); return; }
-document.getElementById('rev-workplan').innerHTML = document.getElementById('wp-select').innerHTML;
-STATE.editingRevenueSourceId = id;
-document.getElementById('rev-modal-title').textContent = `Edit Revenue Source — ${r.source_of_financing_name || ''}`;
-document.getElementById('rev-create-btn').textContent = 'Save Changes';
-document.getElementById('rev-workplan').value = r.work_plan_id;
-populateRevDropdowns();
-const matchedKey = categorizeRevenueSource(r);
-if (matchedKey) {
-for (const selectId of Object.keys(REV_FIELD_MAP)) {
-document.getElementById(selectId).value = matchedKey;
-setRevCustomVisible(selectId, false);
-}
-} else {
-document.getElementById('rev-fund-code').value = REV_CUSTOM_VALUE;
-document.getElementById('rev-source-name').value = REV_CUSTOM_VALUE;
-document.getElementById('rev-functional-def').value = REV_CUSTOM_VALUE;
-setRevCustomVisible('rev-fund-code', true);
-setRevCustomVisible('rev-source-name', true);
-setRevCustomVisible('rev-functional-def', true);
-document.getElementById('rev-fund-code-custom').value = r.pbs_fund_code || '';
-document.getElementById('rev-source-name-custom').value = r.source_of_financing_name || '';
-document.getElementById('rev-functional-def-custom').value = r.functional_definition || '';
-}
-document.getElementById('rev-amount').value = r.approved_budget_amount || 0;
-STATE.revItems = (r.items || []).map(it => ({ description: it.description, amount: it.amount }));
-renderRevItems();
-openModal('modal-rev');
-}
-async function deleteRevenueSource(id) {
-const r = STATE.revenueSources.find(x => x.id === id);
-if (!confirm(`Delete revenue source "${r ? r.source_of_financing_name : id}" and all its sub rows? This cannot be undone.`)) return;
-try {
-await api(`/api/revenue-sources/${id}`, { method: 'DELETE' });
-toast('Revenue source deleted', 'success');
-renderRevenueSources();
-} catch (e) { toast(e.message, 'error'); }
-}
-document.getElementById('rev-create-btn').addEventListener('click', async () => {
-const payload = {
-work_plan_id: Number(document.getElementById('rev-workplan').value),
-pbs_fund_code: getRevFieldValue('rev-fund-code').trim(),
-source_of_financing_name: getRevFieldValue('rev-source-name').trim(),
-functional_definition: getRevFieldValue('rev-functional-def').trim(),
-approved_budget_amount: Number(document.getElementById('rev-amount').value || 0),
-items: STATE.revItems
-.filter(it => it.description && it.description.trim() !== '')
-.map(it => ({ description: it.description.trim(), amount: Number(it.amount) || 0 })),
-};
-if (!payload.work_plan_id || !payload.source_of_financing_name) {
-toast('Please complete the work plan and revenue source name fields', 'error'); return;
-}
-try {
-if (STATE.editingRevenueSourceId) {
-await api(`/api/revenue-sources/${STATE.editingRevenueSourceId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-toast('Revenue source updated — totals recalculated', 'success');
-} else {
-await api('/api/revenue-sources', { method: 'POST', body: JSON.stringify(payload) });
-toast('Revenue source created', 'success');
-}
-closeModal('modal-rev');
-renderRevenueSources();
-} catch (e) { toast(e.message, 'error'); }
-});
-// ---- Import Revenue Sources from Excel ---------------------------------------
-document.getElementById('wp-import-revenue-btn').addEventListener('click', () => {
-const wpVal = document.getElementById('wp-select').value;
-if (!wpVal) { toast('Please select a work plan to import into first', 'error'); return; }
-document.getElementById('wp-import-revenue-file').click();
-});
-document.getElementById('wp-import-revenue-file').addEventListener('change', async (e) => {
-const file = e.target.files[0];
-if (!file) return;
-const wpVal = document.getElementById('wp-select').value;
-const fd = new FormData();
-fd.append('file', file);
-try {
-toast('Importing revenue sources from Excel…', 'info');
-const result = await api(`/api/revenue-sources/import?work_plan_id=${wpVal}`, { method: 'POST', body: fd });
-toast(`Imported ${result.created} revenue source row(s)${result.skipped ? `, skipped ${result.skipped}` : ''}`, 'success');
-if (result.errors && result.errors.length) {
-toast(`${result.errors.length} row warning(s) — first: ${result.errors[0]}`, 'error');
-}
-renderRevenueSources();
-} catch (err) { toast(err.message, 'error'); }
-finally { e.target.value = ''; }
-});
-// ---- Import Budget Estimates from Excel ------------------------------------
-document.getElementById('wp-import-btn').addEventListener('click', () => {
-const wpVal = document.getElementById('wp-select').value;
-if (!wpVal) { toast('Please select a work plan to import into first', 'error'); return; }
-document.getElementById('wp-import-file').click();
-});
-document.getElementById('wp-import-file').addEventListener('change', async (e) => {
-const file = e.target.files[0];
-if (!file) return;
-const wpVal = document.getElementById('wp-select').value;
-const fd = new FormData();
-fd.append('file', file);
-try {
-toast('Importing budget estimates from Excel…', 'info');
-const result = await api(`/api/budget-codes/import?work_plan_id=${wpVal}`, { method: 'POST', body: fd });
-toast(`Imported ${result.created} budget estimate row(s)${result.skipped ? `, skipped ${result.skipped}` : ''}`, 'success');
-if (result.errors && result.errors.length) {
-const total = result.total_warnings || result.errors.length;
-const shownNote = total > result.errors.length ? ` (showing first ${result.errors.length} of ${total})` : '';
-toast(`${total} row warning(s)${shownNote} — first: ${result.errors[0]}`, 'error');
-}
-renderBudgetCodes();
-} catch (err) { toast(err.message, 'error'); }
-finally { e.target.value = ''; }
-});
-// ---- Requisitions --------------------------------------------------------------
-function resetReqLineItems() {
-// Start every new requisition with three Sub Activity sections (S/N 01,
-// 02 and 03), each with 5 blank priced lines underneath it, so there's
-// room to fill the form without needing an "Add Sub Activity" control
-// (removed — sections are now fixed at three per requisition).
-STATE.reqLineItems = [];
-for (let sectionNo = 1; sectionNo <= 3; sectionNo++) {
-STATE.reqLineItems.push({ item_no: sectionNo, description: '', units: '', qty: null, rate: null, amount: 0, isHeader: true });
-for (let i = 0; i < 5; i++) {
-STATE.reqLineItems.push({ item_no: sectionNo, description: '', units: '', qty: null, rate: null, amount: 0, isHeader: false, ledger_folio: '', charge_date: '' });
-}
-}
-}
-function currentReqSectionNo() {
-if (!STATE.reqLineItems.length) return 1;
-return STATE.reqLineItems[STATE.reqLineItems.length - 1].item_no;
-}
-function insertReqLineItemAfter(idx) {
-const ref = STATE.reqLineItems[idx];
-const sectionNo = ref ? ref.item_no : currentReqSectionNo();
-STATE.reqLineItems.splice(idx + 1, 0, { item_no: sectionNo, description: '', units: '', qty: 0, rate: 0, amount: 0, isHeader: false, ledger_folio: '', charge_date: '' });
-renderReqLineItems();
-}
-function updateReqLineItem(idx, field, value) {
-const li = STATE.reqLineItems[idx];
-if (!li) return;
-if (field === 'qty' || field === 'rate') {
-li[field] = value === '' ? null : Number(value);
-if (li.qty != null && li.rate != null && !Number.isNaN(li.qty) && !Number.isNaN(li.rate)) {
-li.amount = li.qty * li.rate;
-}
-} else if (field === 'amount') {
-li.amount = Number(value || 0);
-} else {
-li[field] = value;
-}
-renderReqLineItems();
-}
-function removeReqLineItem(idx) {
-STATE.reqLineItems.splice(idx, 1);
-if (STATE.reqLineItems.length === 0) resetReqLineItems();
-renderReqLineItems();
-}
-function reqLineItemsGrandTotal() {
-return STATE.reqLineItems.reduce((sum, li) => sum + (Number(li.amount) || 0), 0);
-}
-function renderReqLineItems() {
-const tbody = document.getElementById('req-lineitems-body');
-const pvTbody = document.getElementById('pv-lineitems-body');
-const activeEl = document.activeElement;
-const activeIdx = activeEl && activeEl.dataset ? activeEl.dataset.liIdx : null;
-const activeField = activeEl && activeEl.dataset ? activeEl.dataset.liField : null;
-const chargeDate = document.getElementById('req-form-date') ? document.getElementById('req-form-date').textContent : '';
-let lastNo = null;
-tbody.innerHTML = STATE.reqLineItems.map((li, idx) => {
-const showNo = li.item_no !== lastNo;
-lastNo = li.item_no;
-return `<tr>
-<td style="font-weight:700;">${showNo ? 'S/N ' + String(li.item_no).padStart(2,'0') : ''}</td>
-<td class="wrap"><textarea data-li-idx="${idx}" data-li-field="description" rows="1" placeholder="${li.isHeader ? 'Sub activity title, e.g. Field fuel' : 'Item description'}" oninput="updateReqLineItem(${idx},'description',this.value)">${escapeHtml(li.description)}</textarea></td>
-<td><input type="text" data-li-idx="${idx}" data-li-field="units" value="${escapeHtml(li.units||'')}" oninput="updateReqLineItem(${idx},'units',this.value)"/></td>
-<td><input type="number" data-li-idx="${idx}" data-li-field="qty" value="${li.qty ?? ''}" oninput="updateReqLineItem(${idx},'qty',this.value)"/></td>
-<td><input type="number" data-li-idx="${idx}" data-li-field="rate" value="${li.rate ?? ''}" oninput="updateReqLineItem(${idx},'rate',this.value)"/></td>
-<td><input type="number" data-li-idx="${idx}" data-li-field="amount" value="${li.amount ?? 0}" oninput="updateReqLineItem(${idx},'amount',this.value)"/></td>
-<td class="no-print" style="white-space:nowrap;"><button type="button" class="rf-row-add" title="Add line" onclick="insertReqLineItemAfter(${idx})">＋</button><button type="button" class="rf-row-remove" title="Remove line" onclick="removeReqLineItem(${idx})">✕</button></td>
-</tr>`;
-}).join('');
-// Payment Voucher table mirrors the same line items (so the same work
-// isn't entered twice) but adds the two "Taken on charge expenditure"
-// columns — Ledger Folio and a per-line charge Date — which only appear
-// on the voucher.
-if (pvTbody) {
-let lastPvNo = null;
-pvTbody.innerHTML = STATE.reqLineItems.filter(li => !li.isHeader || li.description).map((li, idx) => {
-const showNo = li.item_no !== lastPvNo;
-lastPvNo = li.item_no;
-return `<tr>
-<td>${showNo ? escapeHtml(chargeDate || '') : ''}</td>
-<td class="wrap">${escapeHtml(li.description || '')}</td>
-<td><input type="text" data-pv-li-idx="${idx}" data-pv-li-field="ledger_folio" value="${escapeHtml(li.ledger_folio||'')}" oninput="updatePvLineItem(${idx},'ledger_folio',this.value)"/></td>
-<td><input type="text" data-pv-li-idx="${idx}" data-pv-li-field="charge_date" value="${escapeHtml(li.charge_date||'')}" oninput="updatePvLineItem(${idx},'charge_date',this.value)"/></td>
-<td class="num">${li.amount ? money(li.amount) : ''}</td>
-</tr>`;
-}).join('');
-}
-const grandTotal = reqLineItemsGrandTotal();
-const words = grandTotal > 0 ? numberToWordsUGX(grandTotal) : '—';
-document.getElementById('req-grand-total').textContent = money(grandTotal);
-document.getElementById('req-amount-words').textContent = words;
-const pvGrandTotalEl = document.getElementById('pv-grand-total');
-if (pvGrandTotalEl) {
-pvGrandTotalEl.textContent = money(grandTotal);
-document.getElementById('pv-total-shs').value = grandTotal > 0 ? `UGX ${money(grandTotal)}` : '';
-document.getElementById('pv-total-shs-2').value = grandTotal > 0 ? `UGX ${money(grandTotal)}` : '';
-document.getElementById('pv-passed-shs').value = grandTotal > 0 ? `UGX ${money(grandTotal)}` : '';
-document.getElementById('pv-amount-words').textContent = words;
-document.getElementById('pv-words-line').value = grandTotal > 0 ? words : '';
-}
-if (activeIdx !== null && activeField) {
-const el = tbody.querySelector(`[data-li-idx="${activeIdx}"][data-li-field="${activeField}"]`);
-if (el) { el.focus(); const v = el.value; el.value = ''; el.value = v; }
-}
-// Every description cell is a textarea (not a single-line input) so long
-// item descriptions wrap onto new lines instead of being hidden past the
-// edge of the cell — grow each one to fit its content right after paint.
-tbody.querySelectorAll('textarea[data-li-field="description"]').forEach(autoGrowTextarea);
-}
-function autoGrowTextarea(el) {
-el.style.height = 'auto';
-el.style.height = el.scrollHeight + 'px';
-}
-function updatePvLineItem(idx, field, value) {
-const li = STATE.reqLineItems[idx];
-if (!li) return;
-li[field] = value;
-}
-// ---- Attach Signature (entry forms) --------------------------------------------
-// Fills the signature box nearest wherever this was clicked with whichever
-// signature is on file for the account currently signed in. Actual
-// approval-stage signatures are still recorded automatically from the
-// approval history once a requisition is approved — this is a preview for
-// whoever happens to be filling the box in front of them right now.
-// Strictly role-gated: a box marked with a required role (Head of
-// Department, Senior Treasurer, Town Clerk) can only be signed by an account
-// currently signed in as that exact role — never by anyone else, and never
-// by the System Administrator on someone else's behalf.
-const SIG_ROLE_LABELS = { hod: 'Head of Department', treasurer: 'Senior Treasurer', clerk: 'Town Clerk' };
-function attachSignature(targetId, btn, requiredRole) {
-const el = document.getElementById(targetId);
-if (!el) return;
-if (requiredRole && STATE.role !== requiredRole) {
-toast(`Only the ${SIG_ROLE_LABELS[requiredRole] || requiredRole} can attach a signature here`, 'error');
-return;
-}
-if (!STATE.signatureUrl) {
-toast('No signature on file yet — upload one in My Settings first', 'error');
-return;
-}
-el.innerHTML = `<img src="${API_BASE}${STATE.signatureUrl}" alt="Signature"/>`;
-// Once a signature has been placed, the "Attach Signature" prompt for that
-// box is no longer relevant — remove it rather than leaving it visible.
-if (btn) btn.style.display = 'none';
-// Pull the authorizer's name from the system straight into the name field
-// beneath the signature line — left editable in case it needs correcting.
-const nameField = document.getElementById(targetId + '-name');
-if (nameField && !nameField.value.trim()) nameField.value = STATE.name || '';
-}
-// Shows/hides each "Attach Signature" button according to whether the
-// signed-in account's role is allowed to sign that particular box. Boxes
-// with no required role (e.g. Signature of payee/witness/cashier, which
-// aren't tied to a system role) stay visible for whoever is filling the
-// form. Called whenever the New/Edit Requisition modal opens.
-function refreshSignatureButtonVisibility() {
-document.querySelectorAll('.sig-attach-btn[data-sig-role]').forEach(btn => {
-const requiredRole = btn.getAttribute('data-sig-role');
-btn.style.display = (STATE.role === requiredRole) ? '' : 'none';
-});
-}
-async function openRequisitionModal(editReq) {
-STATE.editingRequisitionId = editReq ? editReq.id : null;
-document.getElementById('req-modal-title').textContent = editReq ? `Edit Requisition — ${editReq.ref_no}` : 'New Requisition';
-document.getElementById('req-route-hod-label').textContent = editReq ? 'Save & Submit to Head of Department' : 'Submit to Head of Department';
-document.getElementById('req-route-hod-mid-label').textContent = editReq ? 'Save & Submit to Head of Department' : 'Submit to Head of Department';
-// Fill in the paper-form fields that mirror who's submitting this and when.
-const deptSel = document.getElementById('req-form-department');
-deptSel.value = String((editReq ? editReq.department_id : STATE.departmentId) || '');
-// Row 1 — System user identity fields; always mirror the signed-in
-// account, never editable, regardless of new vs. edit mode.
-document.getElementById('req-form-sysuser').textContent = STATE.name || '—';
-document.getElementById('req-form-sysemail').textContent = STATE.email || '—';
-document.getElementById('req-form-sysrole').textContent = statusLabel(STATE.role) || '—';
-// Row 2 — Financial Year / Quarter / Date.
-document.getElementById('req-form-fy').value = editReq && editReq.financial_year ? editReq.financial_year : currentFinancialYearGuess();
-document.getElementById('req-form-quarter').value = editReq && editReq.quarter ? editReq.quarter : currentQuarterGuess();
-document.getElementById('req-form-date').textContent = editReq ? fmtDate(editReq.created_at) : fmtDate(new Date().toISOString());
-// Row 3 — Position (defaults to the account's own position on file, but
-// stays editable in case it needs adjusting for this requisition).
-document.getElementById('req-form-position').value = editReq ? (editReq.requester_position || STATE.position || '') : (STATE.position || '');
-// Requisitioner (just the name, no "Full names" label suffix) is typed by the person filling the
-// form rather than being a read-only mirror of the account name — it's
-// pre-filled with the account's name as a starting point either way.
-document.getElementById('req-form-names').value = editReq ? (editReq.requester_name || STATE.name || '') : (STATE.name || '');
-// Mob. No. — the requisitioner's own telephone, pre-filled from the
-// account's own number on file either way, same reasoning as above.
-document.getElementById('req-form-mobile').value = editReq ? (editReq.requester_mobile || STATE.telephone || '') : (STATE.telephone || '');
-document.getElementById('req-form-refno-preview').textContent = editReq ? editReq.ref_no : '(assigned on save)';
-document.getElementById('pv-form-refno-preview').textContent = editReq ? editReq.ref_no : '(assigned on save)';
-syncPvDepartment();
-loadReqBudgetCodes(deptSel.value, editReq ? editReq.budget_code_id : null).then(() => {
-// If the requisition was saved with a typed Budget Output Code that
-// doesn't correspond to a known BudgetCode record, still show it here
-// (once loadReqBudgetCodes has finished resetting the field) so it
-// isn't lost when re-opening the form.
-if (editReq && !editReq.budget_code_id && editReq.budget_output_code_text) {
-document.getElementById('req-form-budgetcode-search').value = editReq.budget_output_code_text;
-}
-});
-// Clear the Attach Signature boxes and voucher-only fields for a fresh form,
-// then re-show every "Attach Signature" button (a fresh form has nothing
-// signed yet) before role-gating and requester pre-fill run below.
-const allSigBoxIds = ['req-sig-requester','req-sig-hod','req-sig-treasurer','req-sig-clerk',
-'pv-sig-controller','pv-sig-clerk','pv-sig-vb','pv-sig-verified','pv-sig-passed',
-'pv-sig-payee','pv-sig-cashier','pv-sig-witness'];
-allSigBoxIds.forEach(id => {
-const b = document.getElementById(id); if (b) b.innerHTML = '';
-const btn = document.getElementById(id + '-btn'); if (btn) btn.style.display = '';
-const nameField = document.getElementById(id + '-name'); if (nameField) nameField.value = '';
-});
-// The requester's own signature is the one box that's actually recorded on
-// the requisition itself — pre-fill it only when reopening a record that was
-// already signed (i.e. editing an existing requisition). A brand-new
-// requisition always starts with this box empty and its "Attach My
-// Signature" button showing, even though the account already has a
-// signature on file — the requester must explicitly click to attach it.
-const requesterSigUrl = editReq ? editReq.requester_signature_url : null;
-if (requesterSigUrl) {
-document.getElementById('req-sig-requester').innerHTML = `<img src="${API_BASE}${requesterSigUrl}" alt="Signature"/>`;
-const reqBtn = document.getElementById('req-sig-requester-btn'); if (reqBtn) reqBtn.style.display = 'none';
-}
-refreshSignatureButtonVisibility();
-const voucher = (editReq && editReq.voucher_data) ? editReq.voucher_data : {};
-document.getElementById('pv-form-budgetcode').value = voucher.budget_output_code || '';
-document.getElementById('pv-form-pvref').value = voucher.pv_reference_no || '';
-document.getElementById('pv-dr-to').value = voucher.dr_to || '';
-document.getElementById('pv-cheque-no').value = voucher.cheque_no || '';
-document.getElementById('pv-address').value = voucher.address || '';
-document.getElementById('pv-authority').value = voucher.authority || '';
-document.getElementById('pv-approved-vote').value = voucher.approved_vote || '';
-document.getElementById('pv-account-no').value = voucher.account_no || '';
-document.getElementById('pv-approved-estimate').value = voucher.approved_estimate || '';
-document.getElementById('pv-instruction-no').value = voucher.cheque_instruction_no || '';
-document.getElementById('pv-day').value = voucher.payment_day || '';
-document.getElementById('pv-year').value = voucher.payment_month_year || '';
-document.getElementById('pv-vb-date').value = voucher.entered_vote_book_date || '';
-document.getElementById('pv-vb-dept').value = '';
-document.getElementById('pv-verified-date').value = voucher.verified_by_date || '';
-document.getElementById('pv-passed-date').value = voucher.passed_payment_date || '';
-document.getElementById('pv-inter-clearance').value = voucher.inter_dept_clearance || '';
-document.getElementById('pv-program-estimate').value = voucher.program_of_estimate || '';
-document.getElementById('pv-sub-program').value = voucher.sub_program || '';
-document.getElementById('pv-item').value = voucher.item || '';
-// Reset the line items and paint the paper form right away so it appears
-// on screen the instant the button is clicked.
-if (!editReq) { resetReqLineItems(); document.getElementById('req-subject').value = ''; }
-if (editReq) {
-document.getElementById('req-subject').value = editReq.subject || '';
-if (editReq.line_items && editReq.line_items.length) {
-STATE.reqLineItems = editReq.line_items.map(li => ({ ...li, isHeader: li.qty == null && li.rate == null && !li.amount }));
-} else {
-resetReqLineItems();
-}
-}
-renderReqLineItems();
-openModal('modal-req');
-// The requisition form's wide table needs room to breathe, so it opens
-// maximized (fullscreen) by default rather than in its small centred
-// size — the user can still tap the minimize button to shrink it back.
-toggleModalMaximize('modal-req');
-}
-document.getElementById('new-req-btn').addEventListener('click', () => openRequisitionModal());
-document.getElementById('req-form-department').addEventListener('change', () => { syncPvDepartment(); loadReqBudgetCodes(document.getElementById('req-form-department').value, null); });
-function syncPvDepartment() {
-const deptSel = document.getElementById('req-form-department');
-const dept = STATE.departments.find(d => String(d.id) === String(deptSel.value));
-const pvDept = document.getElementById('pv-form-department');
-if (pvDept) pvDept.value = deptLabel(dept) || '—';
-}
-// Populates the Budget Output Code search results for the chosen
-// department, and keeps "Activity Budget Limit" / "Activity Budget
-// Balance" / "Budget Output Description" in sync with whichever code is
-// picked — mirrors the paper form, where these are read straight off the
-// selected budget output. The code field itself is free-typed (not a
-// locked dropdown): the results list below it is just a lookup aid, and
-// typing a code that isn't on file is still accepted as-is.
-async function loadReqBudgetCodes(departmentId, selectedId) {
-const searchEl = document.getElementById('req-form-budgetcode-search');
-const hiddenEl = document.getElementById('req-form-budgetcode');
-STATE.reqBudgetCodesForDept = [];
-hiddenEl.value = '';
-searchEl.value = '';
-clearReqBudgetFields();
-closeReqBudgetCodeResults();
-if (!departmentId) return;
-try {
-const codes = await api(`/api/budget-codes?department_id=${departmentId}`);
-STATE.reqBudgetCodesForDept = codes;
-if (selectedId) {
-const bc = codes.find(c => String(c.id) === String(selectedId));
-if (bc) selectReqBudgetCode(bc);
-}
-} catch (e) { /* budget codes are optional on this form; fail quietly */ }
-}
-function clearReqBudgetFields() {
-document.getElementById('req-form-budgetlimit').textContent = '—';
-document.getElementById('req-form-budgetbalance').textContent = '—';
-document.getElementById('req-form-budgetdesc').value = '';
-autoGrowTextarea(document.getElementById('req-form-budgetdesc'));
-}
-function updateReqBudgetLimit() {
-const hiddenEl = document.getElementById('req-form-budgetcode');
-const limitEl = document.getElementById('req-form-budgetlimit');
-const balanceEl = document.getElementById('req-form-budgetbalance');
-const descEl = document.getElementById('req-form-budgetdesc');
-const codes = STATE.reqBudgetCodesForDept || [];
-const bc = codes.find(c => String(c.id) === String(hiddenEl.value));
-limitEl.textContent = bc ? `UGX ${money(bc.allocated_amount)}` : '—';
-balanceEl.textContent = bc ? `UGX ${money(bc.available_balance)}` : '—';
-descEl.value = bc ? (bc.output_description || '') : '';
-autoGrowTextarea(descEl);
-}
-// Selecting from the dropdown fills the code field with the code alone
-// (no " — description" suffix) — the description has its own row below.
-function selectReqBudgetCode(bc) {
-document.getElementById('req-form-budgetcode').value = bc.id;
-document.getElementById('req-form-budgetcode-search').value = bc.code;
-updateReqBudgetLimit();
-closeReqBudgetCodeResults();
-}
-// Typing a code and moving on without picking from the dropdown still
-// tries to match it against the department's known codes (exact,
-// case-insensitive) so the limit/balance/description auto-fill even
-// without an explicit selection; a code with no match is simply kept as
-// free text and the read-only fields stay blank.
-function tryMatchTypedReqBudgetCode() {
-const searchEl = document.getElementById('req-form-budgetcode-search');
-const hiddenEl = document.getElementById('req-form-budgetcode');
-if (hiddenEl.value) return; // already resolved to a known code
-const typed = searchEl.value.trim().toLowerCase();
-if (!typed) { clearReqBudgetFields(); return; }
-const codes = STATE.reqBudgetCodesForDept || [];
-const bc = codes.find(c => (c.code || '').toLowerCase() === typed);
-if (bc) { selectReqBudgetCode(bc); } else { clearReqBudgetFields(); }
-}
-function closeReqBudgetCodeResults() {
-const resultsEl = document.getElementById('req-form-budgetcode-results');
-resultsEl.classList.remove('open');
-resultsEl.innerHTML = '';
-}
-function renderReqBudgetCodeResults(query) {
-const resultsEl = document.getElementById('req-form-budgetcode-results');
-const codes = STATE.reqBudgetCodesForDept || [];
-const q = (query || '').trim().toLowerCase();
-const matches = q
-? codes.filter(c => (c.code || '').toLowerCase().includes(q) || (c.output_description || '').toLowerCase().includes(q))
-: codes;
-if (!codes.length) {
-resultsEl.innerHTML = '<div class="rf-bc-empty">Select a Department first, or type a Budget Output Code directly.</div>';
-} else if (!matches.length) {
-resultsEl.innerHTML = '<div class="rf-bc-empty">No matching budget output code on file — you can still type it in directly.</div>';
-} else {
-// Dropdown lists the Budget Output Code only — the description has its
-// own dedicated row on the form and should not be repeated here.
-resultsEl.innerHTML = matches.slice(0, 30).map(c =>
-`<div class="rf-bc-opt" data-bc-id="${c.id}"><span class="rf-bc-code">${escapeHtml(c.code)}</span></div>`
-).join('');
-resultsEl.querySelectorAll('.rf-bc-opt').forEach(opt => {
-opt.addEventListener('mousedown', (e) => {
-e.preventDefault();
-const bc = (STATE.reqBudgetCodesForDept || []).find(c => String(c.id) === opt.dataset.bcId);
-if (bc) selectReqBudgetCode(bc);
-});
-});
-}
-resultsEl.classList.add('open');
-}
-function wireReqBudgetCodeSearch() {
-const searchEl = document.getElementById('req-form-budgetcode-search');
-const hiddenEl = document.getElementById('req-form-budgetcode');
-searchEl.addEventListener('input', () => {
-// Typing again after a selection was made clears the selected id until
-// a fresh choice is made (or the typed text is re-matched on blur), so
-// a half-edited search string can't be silently submitted as if it
-// were still the old pick.
-hiddenEl.value = '';
-clearReqBudgetFields();
-renderReqBudgetCodeResults(searchEl.value);
-});
-searchEl.addEventListener('focus', () => renderReqBudgetCodeResults(searchEl.value));
-searchEl.addEventListener('blur', () => { tryMatchTypedReqBudgetCode(); setTimeout(closeReqBudgetCodeResults, 120); });
-}
-wireReqBudgetCodeSearch();
-async function submitNewRequisition(submitNow) {
-// In case the person is still focused in the Budget Output Code field
-// (or typed a code and clicked straight to Submit without tabbing away),
-// resolve it against known codes one more time before reading its value.
-tryMatchTypedReqBudgetCode();
-const subject = document.getElementById('req-subject').value.trim();
-const departmentId = document.getElementById('req-form-department').value;
-const lineItems = STATE.reqLineItems
-.filter(li => li.description && li.description.trim() !== '')
-.map(li => ({
-item_no: li.item_no,
-description: li.description.trim(),
-units: li.units ? li.units.trim() : null,
-qty: li.qty,
-rate: li.rate,
-amount: Number(li.amount) || 0,
-}));
-const total = lineItems.reduce((s, li) => s + (Number(li.amount) || 0), 0);
-const voucher = {
-budget_output_code: document.getElementById('pv-form-budgetcode').value.trim() || null,
-pv_reference_no: document.getElementById('pv-form-pvref').value.trim() || null,
-dr_to: document.getElementById('pv-dr-to').value.trim() || null,
-cheque_no: document.getElementById('pv-cheque-no').value.trim() || null,
-address: document.getElementById('pv-address').value.trim() || null,
-authority: document.getElementById('pv-authority').value.trim() || null,
-approved_vote: document.getElementById('pv-approved-vote').value.trim() || null,
-account_no: document.getElementById('pv-account-no').value.trim() || null,
-approved_estimate: document.getElementById('pv-approved-estimate').value.trim() || null,
-cheque_instruction_no: document.getElementById('pv-instruction-no').value.trim() || null,
-payment_day: document.getElementById('pv-day').value.trim() || null,
-payment_month_year: document.getElementById('pv-year').value.trim() || null,
-entered_vote_book_date: document.getElementById('pv-vb-date').value.trim() || null,
-verified_by_date: document.getElementById('pv-verified-date').value.trim() || null,
-passed_payment_date: document.getElementById('pv-passed-date').value.trim() || null,
-inter_dept_clearance: document.getElementById('pv-inter-clearance').value.trim() || null,
-program_of_estimate: document.getElementById('pv-program-estimate').value.trim() || null,
-sub_program: document.getElementById('pv-sub-program').value.trim() || null,
-item: document.getElementById('pv-item').value.trim() || null,
-};
-const payload = {
-department_id: departmentId ? Number(departmentId) : null,
-budget_code_id: document.getElementById('req-form-budgetcode').value ? Number(document.getElementById('req-form-budgetcode').value) : null,
-budget_output_code_text: document.getElementById('req-form-budgetcode-search').value.trim() || null,
-subject,
-financial_year: document.getElementById('req-form-fy').value || null,
-quarter: document.getElementById('req-form-quarter').value || null,
-requester_name: document.getElementById('req-form-names').value.trim() || null,
-requester_position: document.getElementById('req-form-position').value.trim() || null,
-requester_mobile: document.getElementById('req-form-mobile').value.trim() || null,
-line_items: lineItems,
-voucher,
-};
-const requisitionerName = document.getElementById('req-form-names').value.trim();
-if (!payload.department_id || !requisitionerName || !subject || total <= 0) {
-toast('Please select a department, enter the requisitioner\'s name, complete the subject and add at least one priced line item', 'error'); return;
-}
-try {
-if (STATE.editingRequisitionId) {
-const id = STATE.editingRequisitionId;
-await api(`/api/requisitions/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
-if (submitNow) {
-await api(`/api/requisitions/${id}/submit`, { method: 'POST' });
-}
-toast(submitNow ? 'Requisition updated and submitted for approval' : 'Requisition changes saved', 'success');
-} else {
-await api(`/api/requisitions?submit=${submitNow}`, { method: 'POST', body: JSON.stringify(payload) });
-toast(submitNow ? 'Requisition submitted for approval' : 'Requisition saved as draft', 'success');
-}
-closeModal('modal-req');
-loadRequisitions();
-} catch (e) { toast(e.message, 'error'); }
-}
-document.getElementById('req-route-hod').addEventListener('click', () => submitNewRequisition(true));
-document.getElementById('req-route-hod-mid').addEventListener('click', () => submitNewRequisition(true));
-// Print the form as currently filled in, without needing to save first —
-// builds a lightweight object shaped like the saved-requisition payload
-// that renderPrintFormHtml() already knows how to render.
-document.getElementById('req-print-draft').addEventListener('click', () => {
-tryMatchTypedReqBudgetCode();
-const deptSel = document.getElementById('req-form-department');
-const dept = STATE.departments.find(d => String(d.id) === deptSel.value);
-const bcId = document.getElementById('req-form-budgetcode').value;
-const bc = (STATE.reqBudgetCodesForDept || []).find(c => String(c.id) === String(bcId));
-const draft = {
-ref_no: document.getElementById('req-form-refno-preview').textContent || '(unsaved draft)',
-created_at: new Date().toISOString(),
-department_name: deptLabel(dept) || '—',
-requester_name: document.getElementById('req-form-names').value.trim() || STATE.name || '—',
-requester_mobile: document.getElementById('req-form-mobile').value.trim() || null,
-requester_position: document.getElementById('req-form-position').value.trim() || null,
-requester_signature_url: document.getElementById('req-sig-requester').innerHTML.trim() ? STATE.signatureUrl : null,
-budget_code: bc ? bc.code : (document.getElementById('req-form-budgetcode-search').value.trim() || null),
-budget_output: bc ? bc.output_description : document.getElementById('req-form-budgetdesc').value,
-activity_budget_limit: bc ? bc.allocated_amount : null,
-activity_budget_balance: bc ? bc.available_balance : null,
-subject: document.getElementById('req-subject').value.trim(),
-line_items: STATE.reqLineItems.filter(li => li.description && li.description.trim() !== ''),
-voucher_data: {
-budget_output_code: document.getElementById('pv-form-budgetcode').value.trim() || null,
-dr_to: document.getElementById('pv-dr-to').value.trim() || null,
-address: document.getElementById('pv-address').value.trim() || null,
-cheque_no: document.getElementById('pv-cheque-no').value.trim() || null,
-},
-approvals: [],
-};
-document.getElementById('pf-body').innerHTML = renderPrintFormHtml(draft);
-openModal('modal-print-form');
-});
-document.getElementById('req-search').addEventListener('input', debounce(loadRequisitions, 300));
-document.getElementById('req-status-filter').addEventListener('change', loadRequisitions);
-async function loadRequisitions() {
-const tbody = document.getElementById('req-table-body');
-tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-const status = document.getElementById('req-status-filter').value;
-const search = document.getElementById('req-search').value.trim().toLowerCase();
-try {
-let path = '/api/requisitions';
-if (status) path += `?status=${status}`;
-let items = await api(path);
-if (search) items = items.filter(r => (r.ref_no + ' ' + (r.subject||r.activity_details||'')).toLowerCase().includes(search));
-if (items.length === 0) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No requisitions found.</div></td></tr>'; return; }
-STATE_REQUISITIONS_CACHE = items;
-tbody.innerHTML = items.map(r => {
-const isOwnerOrAdmin = (r.requester_id == STATE.userId || STATE.role === 'admin');
-const isEditable = isOwnerOrAdmin && (r.status === 'draft' || r.status === 'returned');
-return `
-<tr>
-<td class="mono">${r.ref_no}</td>
-<td>${escapeHtml(r.requester_name || '—')}</td>
-<td>${escapeHtml(r.department_name || '—')}</td>
-<td class="wrap">${escapeHtml(r.subject || r.activity_details || '—')}</td>
-<td class="num mono">${money(r.amount_requested)}</td>
-<td><span class="pill pill-${r.status}">${statusLabel(r.status)}</span></td>
-<td>${escapeHtml(statusLabel(r.current_stage))}</td>
-<td>${fmtDate(r.created_at)}</td>
-<td style="white-space:nowrap;">
-<button class="btn btn-ghost" style="padding:6px 10px;" onclick="viewRequisition(${r.id})">View</button>
-${(r.accountability && r.accountability.status !== 'verified' && isOwnerOrAdmin) ? `<button class="btn btn-gold" style="padding:6px 10px; margin-left:6px;" onclick="openUploadModal(${r.id})">Upload</button>` : ''}
-${isEditable ? `<button class="btn btn-ghost" style="padding:6px 10px; margin-left:6px;" onclick="editRequisition(${r.id})">Edit</button>` : ''}
-${isEditable ? `<button class="btn btn-danger" style="padding:6px 10px; margin-left:6px;" onclick="deleteRequisition(${r.id})">Delete</button>` : ''}
-</td>
-</tr>`;
-}).join('');
-} catch (e) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-let STATE_REQUISITIONS_CACHE = [];
-async function editRequisition(id) {
-try {
-const r = await api(`/api/requisitions/${id}`);
-openRequisitionModal(r);
-} catch (e) { toast(e.message, 'error'); }
-}
-async function deleteRequisition(id) {
-const r = STATE_REQUISITIONS_CACHE.find(x => x.id === id);
-if (!confirm(`Delete requisition ${r ? r.ref_no : id}? This cannot be undone.`)) return;
-try {
-await api(`/api/requisitions/${id}`, { method: 'DELETE' });
-toast('Requisition deleted', 'success');
-loadRequisitions();
-} catch (e) { toast(e.message, 'error'); }
-}
-async function viewRequisition(id) {
-STATE.currentReqId = id;
-const body = document.getElementById('rd-body');
-const foot = document.getElementById('rd-foot');
-body.innerHTML = '<div class="loading-row"><span class="spinner spinner-dark"></span></div>';
-foot.innerHTML = '';
-openModal('modal-req-detail');
-// This view also has a wide paper-form layout, so open it maximized
-// (fullscreen) by default, same as the New Requisition form — the
-// minimize button lets the user shrink it back down.
-toggleModalMaximize('modal-req-detail');
-try {
-const r = await api(`/api/requisitions/${id}`);
-document.getElementById('rd-title').textContent = r.ref_no;
-// Show the same filled-in paper-form view used on the Requisition tab
-// (Funds Requisition Form + Cheque Payment Voucher, read-only with the
-// saved data and signatures) rather than a separate summary layout, so
-// "View" always mirrors what was actually filled and submitted.
-body.innerHTML = `
-<div style="margin-bottom:4px;"><span class="pill pill-${r.status}">${statusLabel(r.status)}</span></div>
-${renderFilledRequisitionFormHtml(r)}
-${r.accountability ? `<div class="divider"></div><div class="kicker">Accountability</div><div style="margin-top:8px;"><span class="pill pill-${r.accountability.status}">${statusLabel(r.accountability.status)}</span><div class="tl-meta" style="margin-top:6px;">${escapeHtml(r.accountability.remarks||'No remarks yet')}</div>${(r.accountability.status !== 'verified' && (r.requester_id == STATE.userId || STATE.role === 'admin')) ? '<div class="help-text" style="margin-top:6px;">Upload the Payment Voucher, Official Receipts, Signed Attendance Sheets and any other supporting documents for this requisition.</div>' : ''}</div>` : ''}
-`;
-let footHtml = `<button class="btn btn-ghost" onclick="openPrintForm(${r.id})"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9V3H18V9" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="4" y="9" width="16" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="7" y="14" width="10" height="6" stroke="currentColor" stroke-width="1.8"/></svg>Print Requisition Form</button>`;
-if (r.status === 'draft' && (r.requester_id == STATE.userId || STATE.role === 'admin')) {
-footHtml += `<button class="btn btn-primary" onclick="submitExisting(${r.id})">Submit for Approval</button>`;
-}
-const stageRole = { hod: 'hod', treasurer: 'treasurer', clerk: 'clerk' }[r.current_stage];
-if (stageRole && (STATE.role === stageRole || STATE.role === 'admin')) {
-footHtml += `
-<button class="btn btn-danger" onclick="actOnRequisition(${r.id}, 'reject')">Reject</button>
-<button class="btn btn-ghost" onclick="actOnRequisition(${r.id}, 'return')">Return for Correction</button>
-<button class="btn btn-primary" onclick="actOnRequisition(${r.id}, 'approve')">Approve</button>`;
-}
-const canUpload = r.accountability && r.accountability.status !== 'verified' && (r.requester_id == STATE.userId || STATE.role === 'admin');
-if (canUpload) {
-footHtml += `<button class="btn btn-gold" onclick="openUploadModal(${r.id})">Upload Accountability Document</button>`;
-}
-if (r.accountability && (STATE.role === 'auditor' || STATE.role === 'admin')) {
-footHtml += `<button class="btn btn-primary" onclick="closeModal('modal-req-detail'); openDocumentViewer(${r.id});">Review Documents &amp; Verify</button>`;
-}
-foot.innerHTML = footHtml;
-} catch (e) { body.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
-}
-async function submitExisting(id) {
-try { await api(`/api/requisitions/${id}/submit`, { method: 'POST' }); toast('Requisition submitted', 'success'); closeModal('modal-req-detail'); loadRequisitions(); }
-catch (e) { toast(e.message, 'error'); }
-}
-async function actOnRequisition(id, action) {
-let comments = '';
-if (action !== 'approve') {
-comments = prompt(`Please provide comments for this ${action === 'reject' ? 'rejection' : 'return'}:`) || '';
-}
-try {
-await api(`/api/requisitions/${id}/approve-action`, { method: 'POST', body: JSON.stringify({ action, comments }) });
-toast(`Requisition ${action}d`, action === 'approve' ? 'success' : 'info');
-closeModal('modal-req-detail');
-loadApprovals(); loadRequisitions(); loadDashboard();
-} catch (e) { toast(e.message, 'error'); }
-}
-// ---- Printable Requisition Form (mirrors the Council's paper layout) -------
-async function openPrintForm(reqId) {
-const body = document.getElementById('pf-body');
-body.innerHTML = '<div class="loading-row"><span class="spinner spinner-dark"></span></div>';
-openModal('modal-print-form');
-try {
-const r = await api(`/api/requisitions/${reqId}`);
-body.innerHTML = renderPrintFormHtml(r);
-} catch (e) { body.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
-}
-// Shared computation used by both the read-only "View" form and the
-// printable form: line-item rows (both the Requisition Form grid and the
-// mirrored Payment Voucher grid), running totals, amount-in-words, and
-// every signature image URL resolved from the approval trail.
-function computeReqFormParts(r) {
-const items = r.line_items || [];
-const voucher = r.voucher_data || {};
-let rowsHtml = '';
-let pvRowsHtml = '';
-let lastNo = null;
-let sectionSum = 0;
-let grandTotal = 0;
-const flushSection = () => {
-if (lastNo !== null) {
-rowsHtml += `<tr class="rf-subtotal"><td colspan="5" style="text-align:right;">Sub Total</td><td class="num">${money(sectionSum)}</td></tr>`;
-}
-};
-const submissionDate = fmtDate(r.created_at);
-items.forEach((li, i) => {
-if (li.item_no !== lastNo) {
-flushSection();
-lastNo = li.item_no;
-sectionSum = 0;
-}
-const isHeaderRow = (li.qty == null && li.rate == null && (!li.amount || Number(li.amount) === 0));
-const showNo = (i === 0 || items[i-1].item_no !== li.item_no);
-rowsHtml += `<tr class="${isHeaderRow ? 'rf-section-head' : ''}">
-<td>${showNo ? 'S/N ' + String(li.item_no).padStart(2,'0') : ''}</td>
-<td class="wrap">${escapeHtml(li.description)}</td>
-<td>${escapeHtml(li.units || '')}</td>
-<td class="num">${li.qty ? money(li.qty) : ''}</td>
-<td class="num">${li.rate ? money(li.rate) : ''}</td>
-<td class="num">${li.amount ? money(li.amount) : ''}</td>
-</tr>`;
-if (!isHeaderRow) {
-pvRowsHtml += `<tr>
-<td>${showNo ? escapeHtml(submissionDate) : ''}</td>
-<td class="wrap">${escapeHtml(li.description)}</td>
-<td>${escapeHtml(li.ledger_folio || '')}</td>
-<td>${escapeHtml(li.charge_date || '')}</td>
-<td class="num">${li.amount ? money(li.amount) : ''}</td>
-</tr>`;
-}
-sectionSum += Number(li.amount) || 0;
-grandTotal += Number(li.amount) || 0;
-});
-flushSection();
-const subject = r.subject || r.activity_details || '';
-const words = numberToWordsUGX(grandTotal);
-const requesterSigUrl = r.requester_signature_url || null;
-const hodSigUrl = findStageSignatureUrl(r, 'hod');
-const treasurerSigUrl = findStageSignatureUrl(r, 'treasurer');
-const clerkSigUrl = findStageSignatureUrl(r, 'clerk');
-// Authorizer's name from the system for the space between the dotted
-// signature line and the role label — resolved from the same approval
-// record as their signature image.
-const hodName = findStageActorName(r, 'hod');
-const treasurerName = findStageActorName(r, 'treasurer');
-const clerkName = findStageActorName(r, 'clerk');
-const sigImg = (url) => url ? `<img src="${API_BASE}${url}" alt="Signature" />` : '';
-const dots = (text) => `<span class="rf-dots">${escapeHtml(text || '').padEnd(1,'\u00A0') || '&nbsp;'}</span>`;
-return { items, voucher, rowsHtml, pvRowsHtml, grandTotal, subject, words, submissionDate, requesterSigUrl, hodSigUrl, treasurerSigUrl, clerkSigUrl, hodName, treasurerName, clerkName, sigImg, dots };
-}
-function findStageSignatureUrl(r, stage) {
-const approvals = r.approvals || [];
-for (let i = approvals.length - 1; i >= 0; i--) {
-const a = approvals[i];
-if (a.stage === stage && a.action === 'approve' && a.actor_signature_url) {
-return a.actor_signature_url;
-}
-}
-return null;
-}
-function findStageActorName(r, stage) {
-const approvals = r.approvals || [];
-for (let i = approvals.length - 1; i >= 0; i--) {
-const a = approvals[i];
-if (a.stage === stage && a.action === 'approve' && a.actor) {
-return a.actor;
-}
-}
-return null;
-}
-// The Cheque Payment Voucher half of the form — identical markup whether
-// it's reached via "View" or via "Print", since both mirror the same
-// paper document filled in together with the Requisition Form.
-function renderPvFormHtml(r, parts) {
-const { voucher, pvRowsHtml, grandTotal, words, hodSigUrl, clerkSigUrl, hodName, clerkName, sigImg, dots } = parts;
-return `
-<div class="pv-form">
-<img src="header.jpg" alt="Ntoroko District Local Government — Karugutu Town Council" class="rf-header-img"/>
-<div class="req-form-header"><div class="rf-title">Cheque Payment Voucher</div></div>
-<div class="rf-refno">Voucher No. <span class="mono">${escapeHtml(r.ref_no)}</span></div>
-<table class="req-form-meta-table">
-<tr>
-<td style="width:50%;"><strong>Department:</strong><span class="rf-fill">${escapeHtml(r.department_name || '—')}</span></td>
-<td style="width:50%;"><strong>Cheque No:</strong><span class="rf-fill">${escapeHtml(voucher.cheque_no || '—')}</span></td>
-</tr>
-<tr>
-<td><strong>Budget Output Code:</strong><span class="rf-fill">${escapeHtml(voucher.budget_output_code || '—')}</span></td>
-<td><strong>Payment Voucher Reference No:</strong><span class="rf-fill">${escapeHtml(voucher.pv_reference_no || '—')}</span></td>
-</tr>
-<tr>
-<td><strong>Dr. To:</strong><span class="rf-fill">${escapeHtml(voucher.dr_to || '—')}</span></td>
-<td><strong>Address:</strong><span class="rf-fill">${escapeHtml(voucher.address || '—')}</span></td>
-</tr>
-</table>
-<table class="req-form-table">
-<thead><tr><th style="width:10%;">Date</th><th>Detailed description of service or article</th><th colspan="2" style="width:20%; text-align:center;">Taken on charge expenditure</th><th class="num" style="width:14%;">Amount (Shs)</th></tr>
-<tr><th></th><th></th><th style="width:10%;">Ledger Folio</th><th style="width:10%;">Date</th><th class="num"></th></tr>
-</thead>
-<tbody>
-${pvRowsHtml || '<tr><td colspan="5" style="text-align:center; color:#777;">No line items recorded</td></tr>'}
-<tr class="rf-grand"><td colspan="4" style="text-align:right;">TOTAL</td><td class="num">UGX ${money(grandTotal)}</td></tr>
-</tbody>
-</table>
-<div class="pv-certify">
-<div class="pv-plain-line"><strong>Authority:</strong>${dots(voucher.authority)}<strong>Total</strong>${dots('UGX ' + money(grandTotal))}</div>
-<div class="pv-plain-line"><strong>Approved vote</strong>${dots(voucher.approved_vote)}<strong>Account No.</strong>${dots(voucher.account_no)}</div>
-<div class="pv-plain-line"><strong>approved Estimate</strong>${dots(voucher.approved_estimate)}<strong>Cheque payment instruction No</strong>${dots(voucher.cheque_instruction_no)}</div>
-<p style="margin-top:10px;"><strong>I HEREBY CERTIFY</strong> that the above amount is correct and was incurred under the authority quoted, that the above services has been duly and properly performed / supplies have been received in good condition: that the payment price charge is in accordance with regulations the terms of contract or agreement which are fair and reasonable and that the above expenditure of Shs (in words) ${dots(words)} will not cause an excess over the provision made under the authority quoted on this voucher or under programme/sub-programme shown below:</p>
-<p><strong>I FURTHER CERTIFY</strong> that the stores that have been taken on charge, or are expendable, as indicated above.</p>
-</div>
-<div class="req-form-signatures" style="grid-template-columns:repeat(2,1fr);">
-<div><div class="sig-role">Signature,</div><div class="sig-line">${sigImg(hodSigUrl)}</div><div class="sig-name">${escapeHtml(hodName || '')}</div><div class="sig-label">Vote Controller</div></div>
-<div><div class="sig-role">Signature,</div><div class="sig-line">${sigImg(clerkSigUrl)}</div><div class="sig-name">${escapeHtml(clerkName || '')}</div><div class="sig-label">Town Clerk</div></div>
-</div>
-<div class="pv-received-line" style="margin-top:14px;">
-Received / paid this Day ${dots(voucher.payment_day)} ................. 20${dots(voucher.payment_month_year)} in payment of the above account he Sum of shillings ${dots(words)} (in words).
-</div>
-<table class="pv-block-table">
-<tr>
-<td style="width:34%;">
-<strong>Entered In Vote Book</strong>
-Date: ${dots(voucher.entered_vote_book_date)}<br/>
-<div style="margin-top:16px;">Signature: __________________</div>
-</td>
-<td style="width:33%;">
-<strong>Verified by</strong>
-Date: ${dots(voucher.verified_by_date)}<br/>
-<div style="margin-top:16px;">Signature: __________________</div>
-</td>
-<td style="width:33%;">
-<strong>Passed Payment for (HoF)</strong>
-Shs: UGX ${money(grandTotal)}<br/>
-Date: ${dots(voucher.passed_payment_date)}<br/>
-<div style="margin-top:6px;">Signature: __________________</div>
-</td>
-</tr>
-</table>
-<table class="pv-block-table">
-<tr>
-<td colspan="2"><strong>Signature of payee</strong><div style="margin-top:16px;">__________________</div></td>
-</tr>
-<tr>
-<td><strong>Signature of witness to payment</strong><div style="margin-top:16px;">__________________</div></td>
-<td><strong>Signature of paying officer (cashier)</strong><div style="margin-top:16px;">__________________</div></td>
-</tr>
-</table>
-<table class="pv-block-table">
-<tr>
-<td style="width:60%;">
-<strong>Inter-departmental Clearance:</strong> ${escapeHtml(voucher.inter_dept_clearance || '—')}<br/>
-<strong>Program of Estimate:</strong> ${escapeHtml(voucher.program_of_estimate || '—')}<br/>
-<strong>Sub Program:</strong> ${escapeHtml(voucher.sub_program || '—')}<br/>
-<strong>Item:</strong> ${escapeHtml(voucher.item || '—')}
-</td>
-<td style="width:40%; text-align:right; vertical-align:bottom;">
-<strong>Total Shs</strong>
-<div style="font-weight:700; font-size:15px;">UGX ${money(grandTotal)}</div>
-</td>
-</tr>
-</table>
-</div>
-`;
-}
-// ---- Print form (mirrors the Council's simplified paper layout exactly) --
-function renderPrintFormHtml(r) {
-const parts = computeReqFormParts(r);
-const { rowsHtml, grandTotal, subject, words, submissionDate, requesterSigUrl, hodSigUrl, treasurerSigUrl, clerkSigUrl, hodName, treasurerName, clerkName, sigImg, dots } = parts;
-const budgetRow = `
-<tr>
-<td><strong>Budget Output Code:</strong><span class="rf-fill">${escapeHtml(r.budget_code || '—')}</span></td>
-<td><strong>Activity Budget Limit:</strong><span class="rf-fill">${r.activity_budget_limit != null ? 'UGX ' + money(r.activity_budget_limit) : '—'}</span></td>
-<td><strong>Activity Budget Balance:</strong><span class="rf-fill">${r.activity_budget_balance != null ? 'UGX ' + money(r.activity_budget_balance) : '—'}</span></td>
-</tr>`;
-return `
-<div class="req-form-paper">
-<img src="header.jpg" alt="Ntoroko District Local Government — Karugutu Town Council" class="rf-header-img"/>
-<div class="req-form-header"><div class="rf-title">Funds Requisition Form</div></div>
-<div class="rf-refno">No. <span class="mono">${escapeHtml(r.ref_no)}</span></div>
-<table class="req-form-meta-table">
-<tr>
-<td style="width:50%;"><strong>Department:</strong><span class="rf-fill">${escapeHtml(r.department_name || '—')}</span></td>
-<td style="width:50%;"><strong>Date of Submission:</strong><span class="rf-fill">${submissionDate}</span></td>
-</tr>
-<tr>
-<td><strong>Names:</strong><span class="rf-fill">${escapeHtml(r.requester_name || '—')}</span></td>
-<td><strong>Mob. No.:</strong><span class="rf-fill">${escapeHtml(r.requester_mobile || '—')}</span></td>
-<td><strong>Requisitioner Signature:</strong><span class="rf-fill">${sigImg(requesterSigUrl)}</span></td>
-</tr>
-${budgetRow}
-</table>
-<div class="req-form-subject"><strong>Activity Description(Subject):</strong>${dots(subject)}</div>
-<table class="req-form-table">
-<thead><tr><th style="width:13%;">Sub Activity<br>S/No.</th><th>Description</th><th style="width:8%;">Units</th><th style="width:8%;">Qty</th><th style="width:11%;">Rate</th><th class="num" style="width:13%;">Amount</th></tr></thead>
-<tbody>
-${rowsHtml || '<tr><td colspan="6" style="text-align:center; color:#777;">No line items recorded</td></tr>'}
-<tr class="rf-grand"><td colspan="5" style="text-align:right;">GRAND TOTAL</td><td class="num">${money(grandTotal)}</td></tr>
-</tbody>
-</table>
-<div class="req-form-words"><strong>Amount in words:</strong>${dots(words)}</div>
-<div class="req-form-signatures">
-<div><div class="sig-role">Recommended by,</div><div class="sig-line">${sigImg(hodSigUrl)}</div><div class="sig-name">${escapeHtml(hodName || '')}</div><div class="sig-label">Head of Department</div></div>
-<div><div class="sig-role">Checked and approved by,</div><div class="sig-line">${sigImg(treasurerSigUrl)}</div><div class="sig-name">${escapeHtml(treasurerName || '')}</div><div class="sig-label">Senior Treasurer</div></div>
-<div><div class="sig-role">Authorised by</div><div class="sig-line">${sigImg(clerkSigUrl)}</div><div class="sig-name">${escapeHtml(clerkName || '')}</div><div class="sig-label">Town Clerk</div></div>
-</div>
-</div>
-${renderPvFormHtml(r, parts)}
-`;
-}
-// ---- "View" form — mirrors the full digital entry form (New/Edit
-// Requisition modal) field-for-field, read-only, filled with the saved
-// data: System User Name / Email / Role, Financial Year / Quarter / Date,
-// Department / Position, Requisitioner / Mobile / Signature, Budget
-// Output Code / Limit / Balance / Description, Subject, line items,
-// amount in words, approval signatures, and the same Payment Voucher
-// section — so "View" always shows exactly what was filled under the
-// Requisition tab, not a shortened summary.
-function renderFilledRequisitionFormHtml(r) {
-const parts = computeReqFormParts(r);
-const { rowsHtml, grandTotal, subject, words, submissionDate, requesterSigUrl, hodSigUrl, treasurerSigUrl, clerkSigUrl, hodName, treasurerName, clerkName, sigImg, dots } = parts;
-const roleLabel = r.requester_role ? statusLabel(r.requester_role) : '—';
-return `
-<div class="req-form-paper">
-<img src="header.jpg" alt="Ntoroko District Local Government — Karugutu Town Council" class="rf-header-img"/>
-<div class="req-form-header"><div class="rf-title">Funds Requisition Form</div></div>
-<div class="rf-refno">Ref No. <span class="mono">${escapeHtml(r.ref_no)}</span></div>
-<table class="req-form-meta-table">
-<tr>
-<td style="width:36%;"><strong>System User Name:</strong><span class="rf-fill">${escapeHtml(r.requester_account_name || '—')}</span></td>
-<td style="width:32%;"><strong>Email:</strong><span class="rf-fill">${escapeHtml(r.requester_email || '—')}</span></td>
-<td style="width:32%;"><strong>Role:</strong><span class="rf-fill" style="text-transform:capitalize;">${escapeHtml(roleLabel)}</span></td>
-</tr>
-<tr>
-<td style="width:33.33%;"><strong>Financial Year:</strong><span class="rf-fill">${escapeHtml(r.financial_year || '—')}</span></td>
-<td style="width:33.33%;"><strong>Quarter:</strong><span class="rf-fill">${escapeHtml(r.quarter || '—')}</span></td>
-<td style="width:33.34%;"><strong>Date:</strong><span class="rf-fill">${submissionDate}</span></td>
-</tr>
-<tr>
-<td colspan="3" style="width:100%;"><strong>Department:</strong><span class="rf-fill">${escapeHtml(r.department_name || '—')}</span></td>
-</tr>
-<tr>
-<td style="width:33.33%;"><strong>Requisitioner:</strong><span class="rf-fill">${escapeHtml(r.requester_name || '—')}</span></td>
-<td style="width:33.33%;"><strong>Mob. No.:</strong><span class="rf-fill">${escapeHtml(r.requester_mobile || '—')}</span></td>
-<td style="width:33.34%;"><strong>Position:</strong><span class="rf-fill">${escapeHtml(r.requester_position || '—')}</span></td>
-</tr>
-<tr>
-<td colspan="3"><strong>Requisitioner Signature:</strong><span class="rf-fill">${sigImg(requesterSigUrl)}</span></td>
-</tr>
-<tr>
-<td style="width:33.33%;"><strong>Budget Output Code:</strong><span class="rf-fill">${escapeHtml(r.budget_code || '—')}</span></td>
-<td style="width:33.33%;"><strong>Activity Budget Limit:</strong><span class="rf-fill">${r.activity_budget_limit != null ? 'UGX ' + money(r.activity_budget_limit) : '—'}</span></td>
-<td style="width:33.34%;"><strong>Activity Budget Balance:</strong><span class="rf-fill">${r.activity_budget_balance != null ? 'UGX ' + money(r.activity_budget_balance) : '—'}</span></td>
-</tr>
-<tr>
-<td colspan="3"><strong>Budget Output Description:</strong><span class="rf-fill">${escapeHtml(r.budget_output || '—')}</span></td>
-</tr>
-<tr>
-<td colspan="3"><strong>Activity Description(Subject):</strong><span class="rf-fill">${escapeHtml(subject || '—')}</span></td>
-</tr>
-</table>
-<table class="req-form-table">
-<thead><tr><th style="width:13%;">Sub Activity<br>S/No.</th><th>Description</th><th style="width:8%;">Units</th><th style="width:8%;">Qty</th><th style="width:11%;">Rate</th><th class="num" style="width:13%;">Amount</th></tr></thead>
-<tbody>
-${rowsHtml || '<tr><td colspan="6" style="text-align:center; color:#777;">No line items recorded</td></tr>'}
-<tr class="rf-grand"><td colspan="5" style="text-align:right;">GRAND TOTAL</td><td class="num">${money(grandTotal)}</td></tr>
-</tbody>
-</table>
-<div class="req-form-words"><strong>Amount in words:</strong>${dots(words)}</div>
-<div class="req-form-signatures">
-<div><div class="sig-role">Recommended by,</div><div class="sig-line">${sigImg(hodSigUrl)}</div><div class="sig-name">${escapeHtml(hodName || '')}</div><div class="sig-label">Head of Department</div></div>
-<div><div class="sig-role">Checked and approved by,</div><div class="sig-line">${sigImg(treasurerSigUrl)}</div><div class="sig-name">${escapeHtml(treasurerName || '')}</div><div class="sig-label">Senior Treasurer</div></div>
-<div><div class="sig-role">Authorised by</div><div class="sig-line">${sigImg(clerkSigUrl)}</div><div class="sig-name">${escapeHtml(clerkName || '')}</div><div class="sig-label">Town Clerk</div></div>
-</div>
-</div>
-${renderPvFormHtml(r, parts)}
-`;
-}
-// ---- Approvals ------------------------------------------------------------------
-async function loadApprovals() {
-const tbody = document.getElementById('approval-table-body');
-tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const items = await api('/api/approvals/pending');
-if (items.length === 0) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">Nothing awaiting your approval right now.</div></td></tr>'; return; }
-tbody.innerHTML = items.map(r => {
-const bc = STATE.budgetCodes.find(c => c.id === r.budget_code_id);
-return `
-<tr>
-<td class="mono">${r.ref_no}</td>
-<td>${escapeHtml(r.requester_name||'—')}</td>
-<td>${escapeHtml(r.department_name||'—')}</td>
-<td class="wrap">${escapeHtml(r.subject || r.activity_details || '—')}</td>
-<td class="num mono">${money(r.amount_requested)}</td>
-<td class="num mono">${bc ? money(bc.available_balance) : '—'}</td>
-<td>${escapeHtml(statusLabel(r.current_stage))}</td>
-<td><button class="btn btn-primary" style="padding:6px 10px;" onclick="viewRequisition(${r.id})">Review</button></td>
-</tr>`;
-}).join('');
-} catch (e) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-// ---- Accountability --------------------------------------------------------------
-async function loadAccountability() {
-const tbody = document.getElementById('acc-table-body');
-tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const items = await api('/api/accountability/pending');
-if (items.length === 0) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No accountability records pending review.</div></td></tr>'; return; }
-tbody.innerHTML = items.map(r => `
-<tr>
-<td class="mono">${r.ref_no}</td>
-<td>${escapeHtml(r.department_name||'—')}</td>
-<td class="num mono">${money(r.amount_requested)}</td>
-<td>${r.documents.length} file(s)</td>
-<td><span class="pill pill-${r.accountability ? r.accountability.status : 'pending'}">${statusLabel(r.accountability ? r.accountability.status : 'pending')}</span></td>
-<td><button class="btn btn-primary" style="padding:6px 10px;" onclick="openDocumentViewer(${r.id})">Review</button></td>
-</tr>`).join('');
-} catch (e) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-// ---- Single-page document viewer (Auditor review) --------------------------------
-async function openDocumentViewer(reqId) {
-STATE.currentReqId = reqId;
-const body = document.getElementById('dv-body');
-const foot = document.getElementById('dv-foot');
-body.innerHTML = '<div class="loading-row"><span class="spinner spinner-dark"></span></div>';
-foot.innerHTML = '';
-openModal('modal-doc-view');
-try {
-const r = await api(`/api/requisitions/${reqId}`);
-document.getElementById('dv-title').textContent = `${r.ref_no} — Accountability Documents`;
-const hasVoucher = r.documents.some(d => d.doc_type === 'voucher');
-const hasAnyDoc = r.documents.length > 0;
-const alreadyVerified = r.accountability && r.accountability.status === 'verified';
-let html = `
-<div class="detail-grid" style="margin-bottom:12px;">
-<div><div class="detail-label">Requester</div><div class="detail-value">${escapeHtml(r.requester_name||'—')}</div></div>
-<div><div class="detail-label">Department</div><div class="detail-value">${escapeHtml(r.department_name||'—')}</div></div>
-<div><div class="detail-label">Amount</div><div class="detail-value mono">UGX ${money(r.amount_requested)}</div></div>
-<div><div class="detail-label">Accountability Status</div><div class="detail-value"><span class="pill pill-${r.accountability ? r.accountability.status : 'pending'}">${statusLabel(r.accountability ? r.accountability.status : 'pending')}</span></div></div> 
-</div>
-<div class="divider"></div>
-`;
-if (!alreadyVerified) {
-if (!hasAnyDoc) {
-html += `<div class="login-error" style="display:block; margin-bottom:14px;">No accountability documents have been uploaded yet. This requisition will remain on the Accountability wall until documents — including the Payment Voucher — are uploaded.</div>`;
-} else if (!hasVoucher) {
-html += `<div class="login-error" style="display:block; margin-bottom:14px;">A Payment Voucher has not been uploaded for this requisition yet. Verification cannot proceed until it is attached.</div>`;
-}
-}
-if (r.documents.length === 0) {
-html += `<div class="empty-state">No documents have been uploaded for this requisition yet.</div>`;
-} else {
-html += r.documents.map(d => {
-const url = `${API_BASE}${d.url}`;
-const lower = (d.filename || '').toLowerCase();
-let preview;
-if (lower.endsWith('.pdf')) {
-preview = `<iframe src="${url}" style="width:100%; height:480px; border:1px solid var(--line); border-radius:8px; background:#fff;"></iframe>`;
-} else if (/\.(jpg|jpeg|png)$/.test(lower)) {
-preview = `<img src="${url}" style="max-width:100%; border-radius:8px; border:1px solid var(--line); display:block;" />`;
-} else {
-preview = `<div class="empty-state" style="padding:20px;">Preview not available for this file type. <a href="${url}" target="_blank">Open / download ${escapeHtml(d.filename)}</a></div>`;
-}
-return `
-<div class="card card-pad" style="margin-bottom:16px;">
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
-<div>
-<div style="font-weight:600; font-size:13px;">${escapeHtml(d.filename)}</div>
-<span class="pill pill-draft">${escapeHtml(statusLabel(d.doc_type))}</span>
-</div>
-<a class="btn btn-ghost" href="${url}" target="_blank" style="padding:6px 10px;">Open in new tab</a>
-</div>
-${preview}
-</div>`;
-}).join('');
-}
-body.innerHTML = html;
-let footHtml = '';
-if (r.accountability && (STATE.role === 'auditor' || STATE.role === 'admin')) {
-const canVerify = hasVoucher && hasAnyDoc && !alreadyVerified;
-const disabledAttrs = canVerify ? '' : 'disabled';
-const disabledTitle = canVerify ? '' : 'title="A Payment Voucher and at least one accountability document must be uploaded before this requisition can be verified."';
-if (!alreadyVerified) {
-footHtml += `<button class="btn btn-danger" onclick="flagAccountability(${r.id}); closeModal('modal-doc-view');">Flag Issue</button>`;
-footHtml += `<button class="btn btn-primary" ${disabledAttrs} ${disabledTitle} onclick="verifyAccountability(${r.id}); closeModal('modal-doc-view');">Mark Verified</button>`;
-}
-}
-foot.innerHTML = footHtml;
-} catch (e) {
-body.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`;
-}
-}
-function openUploadModal(reqId) { STATE.currentReqId = reqId; openModal('modal-upload'); }
-document.getElementById('up-submit-btn').addEventListener('click', async () => {
-const fileInput = document.getElementById('up-file');
-if (!fileInput.files.length) { toast('Please choose a file to upload', 'error'); return; }
-const fd = new FormData();
-fd.append('file', fileInput.files[0]);
-try {
-await api(`/api/requisitions/${STATE.currentReqId}/documents?doc_type=${document.getElementById('up-type').value}`, { method: 'POST', body: fd });
-toast('Document uploaded', 'success');
-closeModal('modal-upload');
-viewRequisition(STATE.currentReqId);
-} catch (e) { toast(e.message, 'error'); }
-});
-async function verifyAccountability(id) {
-const remarks = prompt('Add any verification remarks (optional):') || '';
-try {
-await api(`/api/requisitions/${id}/accountability`, { method: 'POST', body: JSON.stringify({ status: 'verified', remarks }) });
-toast('Accountability verified', 'success');
-closeModal('modal-req-detail');
-loadAccountability(); loadDashboard(); loadRequisitions();
-} catch (e) { toast(e.message, 'error'); }
-}
-async function flagAccountability(id) {
-const remarks = prompt('Describe the issue with the submitted documents:') || '';
-if (!remarks.trim()) { toast('Please provide remarks so the requester knows what to fix', 'error'); return; }
-try {
-await api(`/api/requisitions/${id}/accountability`, { method: 'POST', body: JSON.stringify({ status: 'flagged', remarks }) });
-toast('Requisition flagged for correction', 'info');
-closeModal('modal-req-detail');
-loadAccountability(); loadRequisitions();
-} catch (e) { toast(e.message, 'error'); }
-}
-// ---- Reports / Audit --------------------------------------------------------------
-document.querySelectorAll('.tabs-sub button').forEach(btn => {
-btn.addEventListener('click', () => {
-document.querySelectorAll('.tabs-sub button').forEach(b => b.classList.remove('active'));
-btn.classList.add('active');
-document.getElementById('subtab-audit-log').style.display = btn.dataset.subtab === 'audit-log' ? 'block' : 'none';
-document.getElementById('subtab-audit-view').style.display = btn.dataset.subtab === 'audit-view' ? 'block' : 'none';
-});
-});
-async function loadAuditLog() {
-const tbody = document.getElementById('audit-log-body');
-tbody.innerHTML = '<tr><td colspan="4" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const logs = await api('/api/reports/audit-logs');
-if (logs.length === 0) { tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No audit entries yet.</div></td></tr>'; return; }
-tbody.innerHTML = logs.map(l => `<tr><td>${fmtDate(l.created_at)}</td><td class="mono">${l.user ?? '—'}</td><td>${escapeHtml(l.action)}</td><td class="wrap">${escapeHtml(l.details||'—')}</td></tr>`).join('');
-} catch (e) { tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-document.getElementById('audit-view-btn').addEventListener('click', async () => {
-const id = document.getElementById('audit-view-search').value.trim();
-const result = document.getElementById('audit-view-result');
-if (!id) return;
-result.innerHTML = '<div class="loading-row"><span class="spinner spinner-dark"></span></div>';
-try {
-const r = await api(`/api/reports/audit-view/${id}`);
-result.innerHTML = `
-<div class="card card-pad">
-<div class="kicker">Consolidated Audit View — ${r.ref_no}</div>
-<div class="detail-grid" style="margin-top:12px;">
-<div><div class="detail-label">Requester</div><div class="detail-value">${escapeHtml(r.requester_name||'—')}</div></div>
-<div><div class="detail-label">Department</div><div class="detail-value">${escapeHtml(r.department_name||'—')}</div></div>
-<div><div class="detail-label">Budget Code</div><div class="detail-value mono">${escapeHtml(r.budget_code||'—')}</div></div>
-<div><div class="detail-label">Amount</div><div class="detail-value mono">UGX ${money(r.amount_requested)}</div></div>
-<div><div class="detail-label">Status</div><div class="detail-value"><span class="pill pill-${r.status}">${statusLabel(r.status)}</span></div></div>
-<div><div class="detail-label">Stage</div><div class="detail-value">${escapeHtml(statusLabel(r.current_stage))}</div></div>
-</div>
-<div class="divider"></div>
-<div class="kicker">Approval History</div>
-<ul class="timeline" style="margin-top:8px;">
-${r.approvals.map(a => `<li><div class="tl-stamp">${a.action==='approve'?'✓':a.action==='reject'?'✕':'↺'}</div><div class="tl-body"><div class="tl-title">${escapeHtml(statusLabel(a.stage))} — ${escapeHtml(statusLabel(a.action))}d</div><div class="tl-meta">${escapeHtml(a.actor||'—')} • ${escapeHtml(a.comments||'No comments')} • ${fmtDate(a.created_at)}</div></div></li>`).join('') || '<li class="tl-meta">No approval history.</li>'}
-</ul>
-<div class="divider"></div>
-<div class="kicker">Uploaded Documents</div>
-<div style="margin-top:8px;">${r.documents.map(d => `<div style="font-size:12.5px; padding:4px 0;"><a href="${API_BASE}${d.url}" target="_blank">${escapeHtml(d.filename)}</a></div>`).join('') || '<div class="tl-meta">None uploaded.</div>'}</div>
-${r.accountability ? `<div class="divider"></div><div class="kicker">Auditor Remarks</div><div class="tl-meta" style="margin-top:6px;">${escapeHtml(r.accountability.remarks||'—')}</div>` : ''}
-</div>`;
-} catch (e) { result.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
-});
-// ---- Users ------------------------------------------------------------------------
-let STATE_USERS_CACHE = [];
-// ---- New/Edit User signature (moved here from My Settings) --------------------------
-let U_SIG_PENDING_FILE = null;   // a newly-picked file, not yet uploaded (uploaded after the user is created/saved)
-let U_SIG_REMOVE = false;        // user asked to remove the existing saved signature
-let U_SIG_CURRENT_URL = null;    // signature_url already on the account being edited
-function renderUserSigPreview() {
-const img = document.getElementById('u-sig-preview-img');
-const empty = document.getElementById('u-sig-preview-empty');
-const removeBtn = document.getElementById('u-sig-remove-btn');
-if (U_SIG_PENDING_FILE) {
-img.src = URL.createObjectURL(U_SIG_PENDING_FILE);
-img.style.display = 'block';
-empty.style.display = 'none';
-removeBtn.style.display = 'inline-flex';
-} else if (U_SIG_CURRENT_URL && !U_SIG_REMOVE) {
-img.src = API_BASE + U_SIG_CURRENT_URL + (U_SIG_CURRENT_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
-img.style.display = 'block';
-empty.style.display = 'none';
-removeBtn.style.display = 'inline-flex';
-} else {
-img.style.display = 'none';
-empty.style.display = 'block';
-removeBtn.style.display = 'none';
-}
-}
-document.getElementById('u-sig-upload-btn').addEventListener('click', () => document.getElementById('u-sig-file-input').click());
-document.getElementById('u-sig-file-input').addEventListener('change', (e) => {
-const file = e.target.files[0];
-if (!file) return;
-document.getElementById('u-sig-error').style.display = 'none';
-U_SIG_PENDING_FILE = file;
-U_SIG_REMOVE = false;
-renderUserSigPreview();
-});
-document.getElementById('u-sig-remove-btn').addEventListener('click', () => {
-U_SIG_PENDING_FILE = null;
-U_SIG_REMOVE = true;
-document.getElementById('u-sig-file-input').value = '';
-renderUserSigPreview();
-});
-async function saveUserSignatureIfNeeded(userId) {
-const errEl = document.getElementById('u-sig-error');
-try {
-if (U_SIG_PENDING_FILE) {
-const fd = new FormData();
-fd.append('file', U_SIG_PENDING_FILE);
-await api(`/api/users/${userId}/signature`, { method: 'POST', body: fd });
-} else if (U_SIG_REMOVE && U_SIG_CURRENT_URL) {
-await api(`/api/users/${userId}/signature`, { method: 'DELETE' });
-}
-} catch (err) {
-errEl.textContent = err.message || 'Could not save the signature';
-errEl.style.display = 'block';
-throw err;
-}
-}
-document.getElementById('new-user-btn').addEventListener('click', () => {
-STATE.editingUserId = null;
-document.getElementById('u-modal-title').textContent = 'New User';
-document.getElementById('u-create-btn').textContent = 'Create User';
-document.getElementById('u-password-label').textContent = 'Temporary Password';
-document.getElementById('u-name').value = '';
-document.getElementById('u-email').value = '';
-document.getElementById('u-password').value = '';
-document.getElementById('u-position').value = '';
-document.getElementById('u-telephone').value = '';
-document.getElementById('u-role').value = 'staff';
-document.getElementById('u-department').value = '';
-updateUserDeptRequirement();
-U_SIG_PENDING_FILE = null; U_SIG_REMOVE = false; U_SIG_CURRENT_URL = null;
-document.getElementById('u-sig-file-input').value = '';
-document.getElementById('u-sig-error').style.display = 'none';
-renderUserSigPreview();
-openModal('modal-user');
-});
-function openEditUser(id) {
-const u = STATE_USERS_CACHE.find(x => x.id === id);
-if (!u) { toast('Could not find that user — try refreshing.', 'error'); return; }
-STATE.editingUserId = id;
-document.getElementById('u-modal-title').textContent = `Edit User — ${u.full_name}`;
-document.getElementById('u-create-btn').textContent = 'Save Changes';
-document.getElementById('u-password-label').textContent = 'New Password (leave blank to keep current)';
-document.getElementById('u-name').value = u.full_name || '';
-document.getElementById('u-email').value = u.email || '';
-document.getElementById('u-password').value = '';
-document.getElementById('u-position').value = u.position || '';
-document.getElementById('u-telephone').value = u.telephone || '';
-document.getElementById('u-role').value = u.role;
-document.getElementById('u-department').value = u.department_id || '';
-updateUserDeptRequirement();
-U_SIG_PENDING_FILE = null; U_SIG_REMOVE = false; U_SIG_CURRENT_URL = u.signature_url || null;
-document.getElementById('u-sig-file-input').value = '';
-document.getElementById('u-sig-error').style.display = 'none';
-renderUserSigPreview();
-openModal('modal-user');
-}
-async function deleteUser(id) {
-const u = STATE_USERS_CACHE.find(x => x.id === id);
-if (!confirm(`Delete user "${u ? u.full_name : id}"? This only succeeds if they have no requisitions on record — otherwise, disable the account instead.`)) return;
-try {
-await api(`/api/users/${id}`, { method: 'DELETE' });
-toast('User deleted', 'success');
-loadUsers();
-} catch (e) { toast(e.message, 'error'); }
-}
-function updateUserDeptRequirement() {
-const role = document.getElementById('u-role').value;
-const hint = document.getElementById('u-department-hint');
-const label = document.getElementById('u-department-label');
-const isHod = role === 'hod';
-hint.style.display = isHod ? 'block' : 'none';
-label.textContent = isHod ? 'Department (required)' : 'Department';
-}
-document.getElementById('u-role').addEventListener('change', updateUserDeptRequirement);
-document.getElementById('u-create-btn').addEventListener('click', async () => {
-const full_name = document.getElementById('u-name').value.trim();
-const email = document.getElementById('u-email').value.trim();
-const password = document.getElementById('u-password').value;
-const position = document.getElementById('u-position').value.trim();
-const telephone = document.getElementById('u-telephone').value.trim();
-const role = document.getElementById('u-role').value;
-const department_id = document.getElementById('u-department').value ? Number(document.getElementById('u-department').value) : null;
-// A Head of Department account with no Department assigned will never
-// match any requisition in the approvals queue — it silently looks like
-// "nothing to approve" instead of failing loudly, so this is caught here
-// before it ever reaches the server.
-if (role === 'hod' && !department_id) {
-toast('Please select a Department for this Head of Department account', 'error');
-return;
-}
-try {
-if (STATE.editingUserId) {
-if (!full_name || !email) { toast('Please complete the name and email fields', 'error'); return; }
-const payload = { full_name, email, position, telephone, role, department_id };
-if (password) payload.password = password;
-await api(`/api/users/${STATE.editingUserId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-await saveUserSignatureIfNeeded(STATE.editingUserId);
-toast('User updated', 'success');
-} else {
-if (!full_name || !email || !password) { toast('Please complete all fields', 'error'); return; }
-const created = await api('/api/users', { method: 'POST', body: JSON.stringify({ full_name, email, password, position, telephone, role, department_id }) });
-await saveUserSignatureIfNeeded(created.id);
-toast('User created', 'success');
-}
-closeModal('modal-user');
-loadUsers();
-} catch (e) { toast(e.message, 'error'); }
-});
-async function loadUsers() {
-const tbody = document.getElementById('users-table-body');
-tbody.innerHTML = '<tr><td colspan="10" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const users = await api('/api/users');
-STATE_USERS_CACHE = users;
-if (users.length === 0) { tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No users found.</div></td></tr>'; return; }
-tbody.innerHTML = users.map(u => {
-const dept = STATE.departments.find(d => d.id === u.department_id);
-return `<tr>
-<td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email)}</td>
-<td>${escapeHtml(u.position || '—')}</td><td>${escapeHtml(u.telephone || '—')}</td>
-<td class="mono">${escapeHtml(u.plain_password || '—')}</td>
-<td>${adminRoleLabel(u.role)}</td>
-<td>${escapeHtml(deptLabel(dept) || '—')}</td>
-<td><span class="pill pill-${u.is_active ? 'approved' : 'rejected'}">${u.is_active ? 'Active' : 'Disabled'}</span></td>
-<td><button class="btn btn-ghost" style="padding:6px 10px;" onclick="toggleUser(${u.id})">${u.is_active ? 'Disable' : 'Enable'}</button></td>
-<td style="white-space:nowrap;">
-<button class="btn btn-ghost" style="padding:6px 10px;" onclick="openEditUser(${u.id})">Edit</button>
-<button class="btn btn-danger" style="padding:6px 10px; margin-left:4px;" onclick="deleteUser(${u.id})">Delete</button>
-</td>
-</tr>`;
-}).join('');
-} catch (e) { tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-async function toggleUser(id) {
-try { await api(`/api/users/${id}/toggle-active`, { method: 'PATCH' }); loadUsers(); toast('User status updated', 'success'); }
-catch (e) { toast(e.message, 'error'); }
-}
-// ---- Departments view ---------------------------------------------------------------
-document.getElementById('new-dept-btn').addEventListener('click', () => {
-STATE.editingDepartmentId = null;
-document.getElementById('d-modal-title').textContent = 'New Department';
-document.getElementById('d-create-btn').textContent = 'Create Department';
-document.getElementById('d-name').value = '';
-document.getElementById('d-code').value = '';
-document.getElementById('d-abbr').value = '';
-openModal('modal-dept');
-});
-function openEditDepartment(id) {
-const dept = STATE.departments.find(d => d.id === id);
-if (!dept) { toast('Could not find that department — try refreshing.', 'error'); return; }
-STATE.editingDepartmentId = id;
-document.getElementById('d-modal-title').textContent = `Edit Department — ${dept.name}`;
-document.getElementById('d-create-btn').textContent = 'Save Changes';
-document.getElementById('d-name').value = dept.name;
-document.getElementById('d-code').value = dept.code;
-document.getElementById('d-abbr').value = dept.abbreviation || '';
-openModal('modal-dept');
-}
-async function deleteDepartment(id) {
-const dept = STATE.departments.find(d => d.id === id);
-if (!confirm(`Delete department "${dept ? dept.name : id}"? This only succeeds if no users or budget codes are assigned to it.`)) return;
-try {
-await api(`/api/departments/${id}`, { method: 'DELETE' });
-toast('Department deleted', 'success');
-await loadDepartments();
-loadDepartmentsView();
-} catch (e) { toast(e.message, 'error'); }
-}
-document.getElementById('d-create-btn').addEventListener('click', async () => {
-const payload = { name: document.getElementById('d-name').value.trim(), code: document.getElementById('d-code').value.trim(), abbreviation: document.getElementById('d-abbr').value.trim() };
-if (!payload.name || !payload.code) { toast('Please complete both fields', 'error'); return; }
-try {
-if (STATE.editingDepartmentId) {
-await api(`/api/departments/${STATE.editingDepartmentId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-toast('Department updated', 'success');
-} else {
-await api('/api/departments', { method: 'POST', body: JSON.stringify(payload) });
-toast('Department created', 'success');
-}
-closeModal('modal-dept');
-await loadDepartments();
-loadDepartmentsView();
-} catch (e) { toast(e.message, 'error'); }
-});
-async function loadDepartmentsView() {
-const tbody = document.getElementById('depts-table-body');
-tbody.innerHTML = '<tr><td colspan="4" class="loading-row"><span class="spinner spinner-dark"></span></td></tr>';
-try {
-const deps = await api('/api/departments');
-STATE.departments = deps;
-tbody.innerHTML = deps.map(d => `<tr>
-<td class="mono">${escapeHtml(d.code)}</td>
-<td>${escapeHtml(d.name)}</td>
-<td class="mono">${escapeHtml(d.abbreviation || '')}</td>
-<td style="white-space:nowrap;">
-<button class="btn btn-ghost" style="padding:6px 10px;" onclick="openEditDepartment(${d.id})">Edit</button>
-<button class="btn btn-danger" style="padding:6px 10px; margin-left:4px;" onclick="deleteDepartment(${d.id})">Delete</button>
-</td>
-</tr>`).join('') ||
-'<tr><td colspan="4"><div class="empty-state">No departments yet.</div></td></tr>';
-} catch (e) { tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">${escapeHtml(e.message)}</div></td></tr>`; }
-}
-// ---- Utilities -----------------------------------------------------------------------
-function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
-// ---- Boot -----------------------------------------------------------------------------
-if (STATE.token) { enterApp().catch(() => logout()); }
-</script>
-</body>
-</html>
+@app.post("/api/requisitions/{req_id}/accountability")
+def update_accountability(req_id: int, payload: AccountabilityIn,
+                           db: Session = Depends(get_db), user: User = Depends(require_roles("auditor", "admin"))):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r or not r.accountability:
+        raise HTTPException(status_code=404, detail="No accountability record found for this requisition")
+
+    if payload.status == "verified":
+        if not r.documents:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot verify: no accountability documents have been uploaded for this requisition yet."
+            )
+        has_voucher = any(d.doc_type == "voucher" for d in r.documents)
+        if not has_voucher:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot verify: a Payment Voucher must be uploaded for this requisition before it can be verified."
+            )
+
+    r.accountability.status = payload.status
+    r.accountability.remarks = payload.remarks
+    r.accountability.auditor_id = user.id
+    r.accountability.updated_at = dt.datetime.utcnow()
+    if payload.status == "verified":
+        r.status = "accounted"
+    db.commit()
+    log_action(db, user.id, "accountability.update", f"{r.ref_no} -> {payload.status}")
+    if payload.status == "flagged":
+        notify(
+            db, r.requester_id,
+            f"Accountability documents for {r.ref_no} were flagged: {payload.remarks or 'see remarks'}",
+            "rejection", r.id
+        )
+    elif payload.status == "verified":
+        notify(db, r.requester_id, f"Accountability for {r.ref_no} has been verified", "approval_completed", r.id)
+    return requisition_to_dict(r)
+
+
+@app.get("/api/accountability/pending")
+def accountability_pending(db: Session = Depends(get_db), user: User = Depends(require_roles("auditor", "admin"))):
+    reqs = db.query(Requisition).join(AccountabilityRecord).filter(AccountabilityRecord.status != "verified").all()
+    return [requisition_to_dict(r) for r in reqs]
+
+
+# ---------------------------- Notifications ---------------------------------
+
+@app.get("/api/notifications")
+def list_notifications(unread_only: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(Notification).filter(Notification.user_id == user.id)
+    if unread_only:
+        q = q.filter(Notification.is_read == False)
+    items = q.order_by(Notification.created_at.desc()).limit(50).all()
+    return [
+        {"id": n.id, "message": n.message, "category": n.category, "is_read": n.is_read,
+         "created_at": n.created_at.isoformat(), "requisition_id": n.link_requisition_id}
+        for n in items
+    ]
+
+
+@app.patch("/api/notifications/{note_id}/read")
+def mark_notification_read(note_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    n = db.query(Notification).filter(Notification.id == note_id, Notification.user_id == user.id).first()
+    if not n:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    n.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.patch("/api/notifications/read-all")
+def mark_all_read(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    db.query(Notification).filter(Notification.user_id == user.id, Notification.is_read == False).update({"is_read": True})
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------------------- Work Plan PDF Report ---------------------------
+# Static narrative text carried over from the Council's Annual Work Plan &
+# Budget document (forward, Town Clerk message, executive summary). The two
+# data tables below them (Revenue Sources, Annual Workplan Budget) are NOT
+# static — they're rendered live from the database at export time.
+
+REPORT_FORWARD_PARAS = [
+    "It is my pleasure to present the Karugutu Town Council Annual Work Plan and Budget for the Financial Year 2026/2027, which provides the Council's implementation roadmap for delivering quality public services and advancing sustainable socio-economic transformation within our municipality. This Work Plan and Budget operationalizes the Karugutu Town Council Five-Year Strategic Development Plan (2025–2030) by translating its strategic priorities into annual programmes, budget outputs, measurable performance targets, and resource allocations that respond to the aspirations and needs of our people.",
+    "The FY 2026/27 Work Plan has been prepared in accordance with the Constitution of the Republic of Uganda, the Local Governments Act, the Public Finance Management Act, the Programme-Based Budgeting Framework, the Fourth National Development Plan (NDP IV), and other relevant Government policies and guidelines. It reflects our commitment to prudent financial management, transparency, accountability, citizen participation, and results-oriented service delivery.",
+    "During the financial year, the Council will prioritize investments in road infrastructure maintenance, engineering services, physical planning, environmental management, local revenue enhancement, financial accountability, institutional capacity building, agricultural production, community empowerment, and improved governance. These interventions are intended to create an enabling environment for economic growth, improve public service delivery, promote orderly urban development, and enhance the quality of life of the residents of Karugutu Town Council.",
+    "The successful implementation of this Annual Work Plan will depend on the collective efforts of all stakeholders, including the Central Government, Ntoroko District Local Government, Development Partners, the Technical Staff, Council Members, the Private Sector, Civil Society Organizations, Community-Based Organizations, cultural and religious leaders, and the people of Karugutu Town Council. I therefore call upon every stakeholder to actively participate in the implementation, monitoring, and evaluation of the planned interventions to ensure that the intended development outcomes are achieved.",
+    "On behalf of the Council, I extend my sincere appreciation to the Government of Uganda, the Ministry of Local Government, the Ministry of Finance, Planning and Economic Development, Ntoroko District Local Government, our Development Partners, and all stakeholders whose technical and financial support has contributed to the preparation of this Annual Work Plan and Budget.",
+    "I am confident that, through prudent resource management, strong partnerships, and unwavering commitment, Karugutu Town Council will continue to make significant progress towards achieving its strategic vision of a well-planned, prosperous, resilient, and inclusive urban community.",
+]
+REPORT_FORWARD_QUOTE = "\u201cTogether, we shall build a stronger, more prosperous, and sustainable Karugutu Town Council.\u201d"
+REPORT_FORWARD_SIGNOFF = ["Hon Maate Raphael G", "THE CHAIRPERSON LC III", "Karugutu Town Council", "Ntoroko District Local Government"]
+
+REPORT_CLERK_INTRO = [
+    "It is my privilege to present the Karugutu Town Council Annual Work Plan and Budget for the 2026/2027 Financial Year. This document serves as our operational blueprint. It translates our overarching Five-Year Strategic Development Plan (2025–2030) into actionable projects, clear performance targets, and firm financial commitments.",
+    "We developed this work plan in strict compliance with Uganda\u2019s legal frameworks. These include the Constitution, the Local Governments Act, the Public Finance Management Act, and the Fourth National Development Plan (NDP IV). It anchors our operations in Programme-Based Budgeting to guarantee transparency, strict accountability, and high-quality service delivery.",
+    "For FY 2026/2027, we link every single shilling allocated directly to measurable targets, timelines, and specific oversight officers. This results-oriented setup ensures straightforward monitoring and guarantees maximum value for public funds.",
+    "Our key structural priorities for this financial year focus on:",
+]
+REPORT_CLERK_BULLETS = [
+    "Infrastructure: Expanding road networks and engineering projects.",
+    "Urban Growth: Enhancing physical planning and orderly development.",
+    "Finance: Boosting local revenue and enforcing strict financial controls.",
+    "Community: Improving public health sanitation and reinforcing local governance.",
+    "Economy: Driving agricultural production and local economic initiatives.",
+]
+REPORT_CLERK_OUTRO = [
+    "Achieving these milestones demands deep collaboration. We rely on teamwork across all political leaders, technical staff, Ntoroko District Local Government, ministries, and civil society. As Accounting Officer, I will strictly enforce compliance with all national laws, financial regulations, and procurement standards.",
+    "I extend my gratitude to the Mayor, the Executive Committee, our Technical Planning Committee, and our development partners. Your valuable input made this comprehensive plan possible.",
+    "As implementation begins, I urge all council staff and stakeholders to champion professionalism and integrity. Let us work together to build a prosperous, resilient, and well-governed Karugutu Town Council.",
+]
+REPORT_CLERK_SIGNOFF = ["TOWN CLERK", "Karugutu Town Council", "Ntoroko District Local Government"]
+
+# Executive summary: list of ("h3"|"h4"|"p"|"bullets", content) tuples, rendered in order.
+REPORT_EXEC_SUMMARY = [
+    ("h3", "Karugutu Town Council Revenue Analysis for FY 2026/27"),
+    ("p", "The Council\u2019s approved revenue framework for FY 2026/27 amounts to UGX 327,113,640, reflecting a balanced financing strategy that combines Central Government Transfers, Locally Raised Revenue (LRR), and limited development partner support. Central Government Transfers constitute the largest share of the resource envelope at UGX 175,991,640 (53.8%), primarily comprising Urban Unconditional Grant (Non-Wage), Urban Discretionary Development Equalization Grant (DDEG), and the Uganda Road Fund, thereby providing the financial foundation for recurrent service delivery and infrastructure maintenance."),
+    ("p", "Locally Raised Revenue is projected at UGX 151,120,000 (46.2%), demonstrating the Council's commitment to strengthening fiscal autonomy through enhanced revenue mobilization. The principal local revenue streams include Market Revenue (UGX 80.0 million), Council Property and Asset Revenues (UGX 19.4 million), Business Licensing and Trade Regulation (UGX 12.1 million), and Physical Planning and Development Control (UGX 12.47 million). Additional revenues are expected from property rates, public health services, transport and parking fees, environmental charges, advertising, enforcement penalties, and other administrative fees, thereby diversifying the local revenue base and reducing dependence on intergovernmental transfers."),
+    ("p", "Overall, the Council\u2019s FY 2026/27 revenue structure reflects a strategic emphasis on improving local revenue performance while leveraging Government transfers to finance priority programmes, enhance service delivery, strengthen urban governance, and support the sustainable socio-economic development of Karugutu Town Council."),
+    ("h3", "Annual Work Plan and Budget Performance Framework Analysis for FY 2026/27"),
+    ("p", "On the other hand, the Council\u2019s Annual Work Plan and Budget for FY 2026/27 operationalizes the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030) by translating its strategic objectives, priority programmes, and investment interventions into measurable annual outputs, activities, performance targets, and budget allocations. The Work Plan aligns with the Programme-Based Budgeting (PBB) Framework, the Fourth National Development Plan (NDP IV), the Sustainable Development Goals (SDGs), and other relevant national policy and legal frameworks."),
+    ("p", "The FY 2026/27 Work Plan serves as the first annual implementation instrument under the Strategic Development Plan, focusing on strengthening institutional governance, expanding infrastructure development, improving urban planning and environmental management, enhancing local revenue mobilisation, promoting local economic development, and improving access to quality public services."),
+    ("h4", "1. Budget Allocation and Strategic Investment Priorities"),
+    ("p", "The Council has strategically allocated approximately UGX 327.1 million across eight functional departments to finance the 2026/27 Annual Work Plan and a few priority interventions identified in the Five-Year Strategic Development Plan (2025\u20132030)."),
+    ("p", "The 2026/27 Annual Work Plan and Budget composition demonstrates a strategic emphasis on infrastructure development as a catalyst for economic transformation while simultaneously investing in governance, institutional strengthening, financial accountability, social development, and environmental sustainability."),
+    ("h4", "2. Financing Strategy and Budget Implementation"),
+    ("p", "Implementation of the Annual Work Plan will be financed through a combination of Locally Raised Revenue, the Urban Unconditional Grant (Non-Wage), the Uganda Road Fund (URF), and the Urban Discretionary Development Equalization Grant (DDEG)."),
+    ("p", "Routine administrative operations, planning, financial management, community development, governance, monitoring, and regulatory functions are primarily financed through locally generated revenue and unconditional government transfers. Capital-intensive investments are financed through conditional development grants."),
+    ("p", "Quarterly budget phasing has been adopted to promote efficient cash flow management, timely implementation of activities, fiscal discipline, and continuous service delivery throughout the financial year."),
+    ("h4", "3. Results-Based Performance Management Framework"),
+    ("p", "The FY 2026/27 Annual Work Plan adopts a Results-Based Management (RBM) approach in which every budget output is linked to clearly defined performance indicators, baseline values, annual targets, quarterly milestones, funding sources, and responsible officers."),
+    ("p", "Priority performance interventions include:"),
+    ("bullets", [
+        "Improving road infrastructure and engineering services to enhance connectivity and economic productivity.",
+        "Strengthening local revenue mobilization and financial compliance to improve fiscal sustainability.",
+        "Promoting orderly urban growth through spatial planning, GIS mapping, and effective development control.",
+        "Enhancing democratic governance through Council meetings, Standing Committees, Ward Development Committees, public barazas, and citizen engagement.",
+        "Supporting agricultural production, veterinary services, food safety, and enterprise development to stimulate household incomes.",
+        "Expanding community empowerment programmes focusing on gender equality, youth employment, disability inclusion, child protection, and vulnerable groups.",
+        "Strengthening internal controls, financial accountability, procurement compliance, and value-for-money assurance through independent internal audit functions.",
+    ]),
+    ("h4", "4. Monitoring, Evaluation and Accountability"),
+    ("p", "Implementation of the Annual Work Plan will be monitored through quarterly performance reviews, Technical Planning Committee meetings, field supervision, internal audits, Council oversight, statutory reporting, and annual performance assessments."),
+    ("p", "The integration of digital planning tools, electronic records management, GIS-based planning systems, and performance reporting further reinforces the Council's commitment to transparency, innovation, and effective public sector management."),
+    ("h4", "5. Strategic Outlook"),
+    ("p", "The FY 2026/27 Annual Work Plan represents the practical implementation roadmap for the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030), providing a clear pathway for achieving the Council's long-term development aspirations while ensuring accountability, efficiency, and value for public resources."),
+    ("h3", "Annual Budget Framework for FY 2026/27"),
+    ("p", "The Annual Budget Framework for FY 2026/27 provides the strategic financial planning and resource allocation mechanism through which Karugutu Town Council will implement its development priorities and statutory mandates during the financial year 1 July 2026 to 30 June 2027."),
+    ("p", "The budget framework is financed through a combination of locally generated revenue, central government transfers, external financing where applicable, and other lawful sources of revenue, allocated across programmes, departments, and budget outputs."),
+    ("p", "The framework adopts a results-based and programme-oriented approach, ensuring that financial resources are directly linked to measurable outputs, outcomes, and performance indicators, guided by principles of fiscal discipline, value for money, equity, transparency, and accountability."),
+    ("p", "To enhance accountability and effective budget execution, the Council will undertake participatory planning, stakeholder consultations, budget conferences, technical planning committee reviews, council approvals, and regular monitoring and evaluation."),
+    ("h3", "Annual Workplan and Budget Output Performance Targets for FY 2026/27"),
+    ("p", "The Karugutu Town Council Annual Workplan and Budget Output Performance Targets document serves as the formal ex-ante planning instrument, translating national strategic objectives into localized service delivery milestones, formulated under the Programme Budgeting System (PBS) and the Programme Implementation Action Plans (PIAP) framework."),
+    ("p", "Structured hierarchically by Vote, Programme, Sub-Sub Programme, and distinct Budget Outputs, this workplan maps out every operational shilling against verifiable targets."),
+    ("p", "Key Features of the Annual Workplan Framework:"),
+    ("bullets", [
+        "Logical Performance Tracking: Every expenditure line item links directly to a designated baseline value, a clear quarterly cash distribution projection, and a specified PIAP Output Indicator.",
+        "Decentralized Service Monitoring: Operational target structures are embedded directly into daily service points.",
+        "Verifiable Statutory Accountability: The planned targets establish a strict compliance baseline for ex-post audits, used during Annual Local Government Performance Assessment (LGPA) cycles.",
+    ]),
+    ("p", "Ultimately, the detailed document hereunder stands as Karugutu Town Council's binding operational commitment to transparency, evidence-based public financial management, and equitable development."),
+]
+
+# Paragraph/table styles used only by the PDF report.
+_pdf_styles = getSampleStyleSheet()
+_pdf_body = ParagraphStyle("RptBody", parent=_pdf_styles["Normal"], fontSize=9.3, leading=13.5, alignment=TA_JUSTIFY, spaceAfter=7)
+_pdf_bullet = ParagraphStyle("RptBullet", parent=_pdf_body, leftIndent=14, spaceAfter=4)
+_pdf_h1 = ParagraphStyle("RptH1", parent=_pdf_styles["Heading1"], fontSize=14, textColor=colors.HexColor("#146B5F"), spaceBefore=4, spaceAfter=10)
+_pdf_h2 = ParagraphStyle("RptH2", parent=_pdf_styles["Heading2"], fontSize=12.5, textColor=colors.HexColor("#0A1F2B"), spaceBefore=6, spaceAfter=8)
+_pdf_h3 = ParagraphStyle("RptH3", parent=_pdf_styles["Heading3"], fontSize=11, textColor=colors.HexColor("#146B5F"), spaceBefore=10, spaceAfter=5)
+_pdf_h4 = ParagraphStyle("RptH4", parent=_pdf_styles["Heading4"], fontSize=10, textColor=colors.HexColor("#0A1F2B"), spaceBefore=6, spaceAfter=3)
+_pdf_signoff = ParagraphStyle("RptSignoff", parent=_pdf_body, alignment=TA_CENTER, spaceAfter=2)
+_pdf_cover_title = ParagraphStyle("RptCoverTitle", parent=_pdf_styles["Title"], fontSize=22, alignment=TA_CENTER, spaceAfter=6)
+_pdf_cover_sub = ParagraphStyle("RptCoverSub", parent=_pdf_styles["Normal"], fontSize=15, alignment=TA_CENTER, textColor=colors.HexColor("#146B5F"), spaceAfter=4)
+_pdf_cover_line = ParagraphStyle("RptCoverLine", parent=_pdf_styles["Normal"], fontSize=10.5, alignment=TA_CENTER, spaceAfter=3)
+_pdf_cell = ParagraphStyle("RptCell", parent=_pdf_styles["Normal"], fontSize=6.6, leading=8.2, wordWrap="CJK")
+_pdf_cell_b = ParagraphStyle("RptCellB", parent=_pdf_cell, fontName="Helvetica-Bold")
+_pdf_cell_r = ParagraphStyle("RptCellR", parent=_pdf_cell, alignment=TA_RIGHT)
+_pdf_cell_rb = ParagraphStyle("RptCellRB", parent=_pdf_cell_b, alignment=TA_RIGHT)
+
+# The letterhead banner (Uganda coat of arms + "Karugutu Town Council" wordmark
+# + Ntoroko District Local Government seal) used on the report's cover page,
+# matching the letterhead already used at the top of the Word (.docx) version
+# of this report. Expected to live at assets/ktc_letterhead.png alongside
+# this file; the PDF still builds fine (just without the banner) if it's
+# ever missing, so a missing asset never breaks report generation.
+_PDF_LETTERHEAD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ktc_letterhead.png")
+
+
+def _pdf_letterhead_image(max_width=460):
+    """Centered Image flowable of the letterhead banner, scaled to max_width
+    pt while preserving its native aspect ratio (so both logos keep their
+    proportions exactly as in the .docx letterhead). Returns None if the
+    asset file isn't present."""
+    if not os.path.exists(_PDF_LETTERHEAD_PATH):
+        return None
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(_PDF_LETTERHEAD_PATH) as im:
+            src_w, src_h = im.size
+    except Exception:
+        logger.warning("Could not read letterhead image at %s", _PDF_LETTERHEAD_PATH)
+        return None
+    img = RLImage(_PDF_LETTERHEAD_PATH, width=max_width, height=max_width * (src_h / src_w))
+    img.hAlign = "CENTER"
+    return img
+
+
+def _pdf_money(n) -> str:
+    """Format a number the same way the frontend's money() helper does."""
+    return f"{parse_amount(n):,.0f}"
+
+
+def _pdf_narrative_flowables(paras, quote=None, signoff=None, bullets=None):
+    """Build a forward/message page: intro paragraphs, optional bullets, optional quote + signature block."""
+    flow = [Paragraph(t, _pdf_body) for t in paras]
+    if bullets:
+        flow += [Paragraph("\u2022 " + b, _pdf_bullet) for b in bullets]
+    if quote:
+        flow.append(Spacer(1, 6))
+        flow.append(Paragraph(f"<i>{quote}</i>", ParagraphStyle("Q", parent=_pdf_body, alignment=TA_CENTER)))
+    if signoff:
+        flow.append(Spacer(1, 24))
+        for i, line in enumerate(signoff):
+            style = _pdf_signoff if i > 0 else ParagraphStyle("QSig", parent=_pdf_signoff, fontName="Helvetica-Bold")
+            flow.append(Paragraph(line, style))
+    return flow
+
+
+def _pdf_exec_summary_flowables():
+    flow = []
+    for kind, content in REPORT_EXEC_SUMMARY:
+        if kind == "h3":
+            flow.append(Paragraph(content, _pdf_h3))
+        elif kind == "h4":
+            flow.append(Paragraph(content, _pdf_h4))
+        elif kind == "p":
+            flow.append(Paragraph(content, _pdf_body))
+        elif kind == "bullets":
+            flow += [Paragraph("\u2022 " + b, _pdf_bullet) for b in content]
+    return flow
+
+
+def _pdf_dept_summary_table(codes, committed_map):
+    """Mirrors the frontend's renderDeptSummaryTable() grouping — one row per department.
+
+    Labels each row with "<code>: <name>" (via _dept_code_and_name), matching
+    the department dropdowns and this same table on screen."""
+    grouped = {}
+    for c in codes:
+        name = _dept_code_and_name(c.department) or "Unassigned"
+        row = grouped.setdefault(name, {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0})
+        q1, q2, q3, q4 = parse_amount(c.q1_amount), parse_amount(c.q2_amount), parse_amount(c.q3_amount), parse_amount(c.q4_amount)
+        total = q1 + q2 + q3 + q4
+        row["q1"] += q1; row["q2"] += q2; row["q3"] += q3; row["q4"] += q4
+        row["total"] += total
+        row["uncommitted"] += total - committed_map.get(c.id, 0.0)
+    rows = sorted(grouped.items(), key=lambda kv: -kv[1]["total"])
+
+    header = ["Department", "Q1 (UGX)", "Q2 (UGX)", "Q3 (UGX)", "Q4 (UGX)", "Total Budget (UGX)", "Uncommitted Balance (UGX)"]
+    # Every cell is a Paragraph, not a plain string, so long department names
+    # and header labels wrap onto extra lines inside their own cell rather
+    # than spilling over the neighboring column.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+    grand = {"q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "total": 0.0, "uncommitted": 0.0}
+    for name, v in rows:
+        row_vals = [name, _pdf_money(v["q1"]), _pdf_money(v["q2"]), _pdf_money(v["q3"]), _pdf_money(v["q4"]), _pdf_money(v["total"]), _pdf_money(v["uncommitted"])]
+        data.append([
+            Paragraph(row_vals[0], _pdf_cell),
+            *[Paragraph(x, _pdf_cell_r) for x in row_vals[1:]],
+        ])
+        for k in grand:
+            grand[k] += v[k]
+    footer_vals = ["Sub Total", _pdf_money(grand["q1"]), _pdf_money(grand["q2"]), _pdf_money(grand["q3"]), _pdf_money(grand["q4"]), _pdf_money(grand["total"]), _pdf_money(grand["uncommitted"])]
+    data.append([
+        Paragraph(footer_vals[0], _pdf_cell_b),
+        *[Paragraph(x, _pdf_cell_rb) for x in footer_vals[1:]],
+    ])
+
+    t = Table(data, colWidths=[182, 65, 65, 65, 65, 80, 88], repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
+    return t
+
+
+def _pdf_table_style(header_rows=1, footer_rows=0):
+    # All cell content is wrapped in Paragraph flowables (see the _pdf_cell*
+    # styles), so text wraps to a new line inside its own cell instead of
+    # overflowing into the next column/row. FONTNAME/FONTSIZE below are a
+    # fallback for any plain-string cell that might slip through; they have
+    # no effect on Paragraph cells, which use their own ParagraphStyle.
+    style = [
+        ("BACKGROUND", (0, 0), (-1, header_rows - 1), colors.HexColor("#146B5F")),
+        ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), colors.white),
+        ("FONTNAME", (0, 0), (-1, header_rows - 1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#C7D2D0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("ROWBACKGROUNDS", (0, header_rows), (-1, -(footer_rows + 1)), [colors.white, colors.HexColor("#EAF6F1")]),
+    ]
+    if footer_rows:
+        style.append(("BACKGROUND", (0, -footer_rows), (-1, -1), colors.HexColor("#EAF0EF")))
+        style.append(("FONTNAME", (0, -footer_rows), (-1, -1), "Helvetica-Bold"))
+    return TableStyle(style)
+
+
+# ---------------------------------------------------------------------------
+# Revenue Sources Summary — the 3 fixed PBS categories.
+# Mirrors REVENUE_SUMMARY_CATEGORIES / categorizeRevenueSource() in the
+# frontend (index.html) so the PDF report's Revenue Sources Summary table
+# matches the in-app table exactly.
+# ---------------------------------------------------------------------------
+REVENUE_SUMMARY_CATEGORIES = [
+    {
+        "key": "gou",
+        "pbs_fund_code": "001",
+        "source_of_financing_name": "Central Government Transfers (GoU)",
+        "functional_definition": "Regular structural wage, non-wage recurrent, and capital grants.",
+    },
+    {
+        "key": "lr",
+        "pbs_fund_code": "002",
+        "source_of_financing_name": "Locally Raised Revenues (LR)",
+        "functional_definition": "Internally collected fees, levies, licenses, and operational fines.",
+    },
+    {
+        "key": "mdp",
+        "pbs_fund_code": "400",
+        "source_of_financing_name": "Multi-lateral Development Partners",
+        "functional_definition": "International institutional donor funding (e.g., World Bank, UNICEF).",
+    },
+]
+
+# Lookup used by _normalize_revenue_source_fields() (defined earlier in this
+# file, near revenue_source_to_out) to resolve a saved category shorthand
+# ('gou' / 'lr' / 'mdp') back to its full Council-approved label.
+_REVENUE_KEY_TO_FULL = {cat["key"]: cat for cat in REVENUE_SUMMARY_CATEGORIES}
+
+
+def categorize_revenue_source(r: "RevenueSource") -> Optional[str]:
+    """Python port of the frontend's categorizeRevenueSource(): matches a
+    revenue source to one of the 3 fixed PBS categories by fund code or
+    keywords in the source name, or returns None if it fits none of them
+    (such entries are excluded from the summary totals, same as the UI)."""
+    code = (r.pbs_fund_code or "").strip()
+    name = (r.source_of_financing_name or "").lower()
+
+    if code == "001" or "central government" in name or "gou" in name or "transfers" in name:
+        return "gou"
+    if code == "002" or "locally raised" in name or "local revenue" in name or re.search(r"\blr\b", name):
+        return "lr"
+    if code == "400" or "multi-lateral" in name or "multilateral" in name or "development partner" in name or "donor" in name:
+        return "mdp"
+    return None
+
+
+def _pdf_revenue_summary_table(sources):
+    """Mirrors the frontend's Revenue Sources Summary — the 3 fixed PBS categories."""
+    outs = [revenue_source_to_out(r) for r in sources]
+    totals = {c["key"]: 0.0 for c in REVENUE_SUMMARY_CATEGORIES}
+    for r, out in zip(sources, outs):
+        key = categorize_revenue_source(r)
+        if key:
+            totals[key] += out.approved_budget_amount
+
+    header = ["Revenue Source", "Revenue Source Definition", "Revenue Source Amount (UGX)"]
+    # Paragraph-wrapped cells throughout: "Revenue Source" (PBS Fund Code +
+    # Source of Financing Name combined) and "Revenue Source Definition" are
+    # free-text and easily longer than their column, so they need to wrap
+    # onto extra lines rather than overlap the "Revenue Source Amount"
+    # column next to them.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+    grand_total = 0.0
+    for cat in REVENUE_SUMMARY_CATEGORIES:
+        amt = totals[cat["key"]]
+        grand_total += amt
+        data.append([
+            Paragraph(f'{cat["pbs_fund_code"]} — {cat["source_of_financing_name"]}', _pdf_cell),
+            Paragraph(cat["functional_definition"], _pdf_cell),
+            Paragraph(_pdf_money(amt), _pdf_cell_r),
+        ])
+    data.append([
+        Paragraph("Total Revenue", _pdf_cell_b), Paragraph("", _pdf_cell_b),
+        Paragraph(_pdf_money(grand_total), _pdf_cell_rb),
+    ])
+
+    t = Table(data, colWidths=[220, 225, 90], repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
+    return t
+
+
+def _pdf_revenue_detail_table(sources):
+    """The full 'Revenue Source by Category' table — one category head row per
+    revenue source plus its sub rows (revenue items), matching the in-app table."""
+    header = ["PBS Fund Code", "Revenue Source", "Functional Definition", "Item", "Estimate (UGX)", "Category Total (UGX)"]
+    # Paragraph-wrapped cells: revenue source names, functional definitions
+    # and item descriptions are all free text, so each wraps to extra lines
+    # inside its own cell instead of overlapping the columns beside it.
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+    span_cmds = []
+    for r in sources:
+        out = revenue_source_to_out(r)
+        items = out.items or []
+        row_idx = len(data)
+        if items:
+            for i, it in enumerate(items):
+                data.append([
+                    Paragraph(r.pbs_fund_code or "" if i == 0 else "", _pdf_cell),
+                    Paragraph(r.source_of_financing_name if i == 0 else "", _pdf_cell),
+                    Paragraph(r.functional_definition or "" if i == 0 else "", _pdf_cell),
+                    Paragraph(it.description, _pdf_cell),
+                    Paragraph(_pdf_money(it.amount), _pdf_cell_r),
+                    Paragraph(_pdf_money(out.category_total) if i == 0 else "", _pdf_cell_rb),
+                ])
+            span_cmds.append(("SPAN", (0, row_idx), (0, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (1, row_idx), (1, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (2, row_idx), (2, row_idx + len(items) - 1)))
+            span_cmds.append(("SPAN", (5, row_idx), (5, row_idx + len(items) - 1)))
+        else:
+            data.append([
+                Paragraph(r.pbs_fund_code or "", _pdf_cell), Paragraph(r.source_of_financing_name, _pdf_cell),
+                Paragraph(r.functional_definition or "", _pdf_cell), Paragraph("\u2014", _pdf_cell),
+                Paragraph("", _pdf_cell_r), Paragraph(_pdf_money(out.category_total), _pdf_cell_rb),
+            ])
+
+    t = Table(data, colWidths=[52, 110, 155, 130, 62, 75], repeatRows=1)
+    style = _pdf_table_style(header_rows=1)
+    for cmd in span_cmds:
+        style.add(*cmd)
+    t.setStyle(style)
+    return t
+
+
+def _pdf_workplan_table(codes, committed_map):
+    """The full 'Annual Workplan for the FY' budget-code table — every column
+    shown in the in-app table, one row per budget code."""
+    header = ["Dept", "Service Area", "Programme", "Sub Programme", "Code", "Output Description", "PIAP Description",
+               "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source", "Responsible Party"]
+    # Which columns hold numbers, right-aligned for readability (money/counts
+    # read better right-aligned than left-aligned).
+    numeric_cols = {12, 13, 14, 15, 16}
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+    for c in codes:
+        # Baseline/Target: many PIAP indicators record these as narrative
+        # text (e.g. "25% of Council area mapped for vectors") rather than
+        # a plain figure — show the original text (baseline_note/
+        # target_note) when present, since it's the actual source-of-truth
+        # value; otherwise fall back to the numeric figure.
+        baseline_display = c.baseline_note or _pdf_money(c.baseline_value)
+        target_display = c.target_note or _pdf_money(c.planned_target)
+        row = [
+            c.department.name if c.department else "\u2014", c.service_area or "", c.programme or "", c.sub_programme or "",
+            c.code, c.output_description or "", c.piap_output_description or "", c.piap_output_indicator or "",
+            c.unit_of_measure or "", baseline_display, target_display, c.actual_output or "",
+            _pdf_money(c.q1_amount), _pdf_money(c.q2_amount), _pdf_money(c.q3_amount), _pdf_money(c.q4_amount),
+            _pdf_money(c.allocated_amount), c.funding_source or "", c.responsible_party or "",
+        ]
+        data.append([Paragraph(str(v), _pdf_cell_r if i in numeric_cols else _pdf_cell) for i, v in enumerate(row)])
+
+    # 19 columns on a landscape A4 page (doc margins 28pt each side) leave
+    # ~786pt of usable width. These widths sum to ~764pt, so the table fits
+    # inside that frame with room to spare — a table wider than the frame is
+    # what was causing columns to bleed into each other. Every cell is still
+    # a Paragraph, so any text too long for its column wraps onto a new line
+    # inside that cell instead of spilling into the next one.
+    col_widths = [40, 38, 38, 38, 30, 62, 54, 54, 26, 24, 24, 28, 44, 44, 44, 44, 48, 38, 42]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1))
+    return t
+
+
+def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, sources: list) -> io.BytesIO:
+    """Assembles the full Annual Work Plan & Budget PDF: static narrative
+    sections plus the live Revenue Sources and Annual Workplan Budget tables."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=28, bottomMargin=28, leftMargin=28, rightMargin=28)
+
+    letterhead = _pdf_letterhead_image()
+    story = [Spacer(1, 90)]
+    if letterhead is not None:
+        # Banner already contains the "Karugutu Town Council" wordmark
+        # between the two logos, exactly as in the .docx letterhead, so the
+        # separate "Karugutu Town Council" text line isn't repeated here.
+        story.append(letterhead)
+        story.append(Spacer(1, 18))
+        story.append(Paragraph("Ntoroko District Local Government", _pdf_cover_line))
+        story.append(Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line))
+    else:
+        story.append(Paragraph("Karugutu Town Council", _pdf_cover_line))
+        story.append(Paragraph("Ntoroko District Local Government", _pdf_cover_line))
+        story.append(Paragraph("P.O. Box 568, Fort Portal, Uganda", _pdf_cover_line))
+    story += [
+        Spacer(1, 40),
+        Paragraph("ANNUAL WORK PLAN AND BUDGET", _pdf_cover_title),
+        Paragraph(f"FY {wp.financial_year}", _pdf_cover_sub),
+        Spacer(1, 40),
+        Paragraph("Prepared by: Karugutu Town Council Technical Planning Committee", _pdf_cover_line),
+        Paragraph(f"Generated on {dt.datetime.utcnow().strftime('%d %B %Y')}", _pdf_cover_line),
+        PageBreak(),
+        Paragraph("FORWARD BY CHAIRPERSON LC III KARUGUTU TOWN COUNCIL", _pdf_h1),
+    ]
+    story += _pdf_narrative_flowables(REPORT_FORWARD_PARAS, quote=REPORT_FORWARD_QUOTE, signoff=REPORT_FORWARD_SIGNOFF)
+    story.append(PageBreak())
+    story.append(Paragraph("MESSAGE FROM THE TOWN CLERK, KARUGUTU TOWN COUNCIL", _pdf_h1))
+    story += _pdf_narrative_flowables(REPORT_CLERK_INTRO, bullets=REPORT_CLERK_BULLETS)
+    story += _pdf_narrative_flowables(REPORT_CLERK_OUTRO, signoff=REPORT_CLERK_SIGNOFF)
+    story.append(PageBreak())
+    story.append(Paragraph("EXECUTIVE SUMMARY", _pdf_h1))
+    story += _pdf_exec_summary_flowables()
+    story.append(PageBreak())
+
+    story.append(Paragraph("Department Budget Summary", _pdf_h2))
+    story.append(_pdf_dept_summary_table(codes, committed_map))
+    story.append(Spacer(1, 16))
+    story.append(Paragraph("Revenue Sources Summary", _pdf_h2))
+    story.append(_pdf_revenue_summary_table(sources))
+    story.append(PageBreak())
+    story.append(Paragraph("APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
+    story.append(_pdf_revenue_detail_table(sources))
+    story.append(PageBreak())
+    story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND BUDGET ESTIMATES FOR FY 2026/2027", _pdf_h2))
+    story.append(_pdf_workplan_table(codes, committed_map))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+@app.get("/api/work-plans/{wp_id}/report-pdf")
+def download_workplan_report_pdf(wp_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Streams the full Annual Work Plan & Budget PDF (narrative + Revenue
+    Sources + Annual Workplan Budget tables) for one work plan."""
+    wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
+    if not wp:
+        raise HTTPException(status_code=404, detail="Work plan not found")
+    codes = (
+        db.query(BudgetCode)
+        .options(joinedload(BudgetCode.department))
+        .filter(BudgetCode.work_plan_id == wp_id)
+        .order_by(BudgetCode.id.asc())
+        .all()
+    )
+    sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == wp_id).order_by(RevenueSource.id.asc()).all()
+    committed_map = _bulk_committed_amounts(db, [c.id for c in codes])
+    buf = build_workplan_report_pdf(wp, codes, committed_map, sources)
+    fname = f"Annual_Work_Plan_FY_{wp.financial_year.replace('/', '-')}.pdf"
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ---------------------------- Dashboard & Reports ----------------------------
+
+@app.get("/api/dashboard/stats")
+def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Personal/role-scoped counters are cheap and always fresh (they depend
+    # on who's asking), so they're computed directly. The heavier,
+    # role-independent part of this payload — total budget, utilisation,
+    # and the per-department chart data — is cached, since it is identical
+    # for every viewer and was previously the slow part of this endpoint
+    # (it used to call BudgetCode.committed_amount once per row, each of
+    # which opened its own DB session — an N+1 pattern fixed below by
+    # _bulk_committed_amounts).
+    base = db.query(Requisition)
+    if user.role == "staff":
+        base = base.filter(Requisition.requester_id == user.id)
+    elif user.role == "hod":
+        base = base.filter(Requisition.department_id == user.department_id)
+
+    pending = base.filter(Requisition.current_stage.in_(["hod", "treasurer", "clerk"])).count()
+    approved = base.filter(Requisition.status.in_(["approved", "accounted"])).count()
+    rejected = base.filter(Requisition.status == "rejected").count()
+    recent = base.order_by(Requisition.created_at.desc()).limit(6).all()
+
+    budget_summary = _cache_get("dashboard_stats:budget_summary")
+    if budget_summary is None:
+        # The dashboard's Total Budget figure is the total of the workplan
+        # budget across every Annual Work Plan on record — it is not tied
+        # to any one financial year, so it isn't scoped to the current
+        # (most recently created) work plan the way the Work Plan & Budget
+        # screen's GRAND TOTAL is.
+        codes_q = db.query(BudgetCode).options(joinedload(BudgetCode.department))
+        all_codes = codes_q.all()
+        committed_map = _bulk_committed_amounts(db, [bc.id for bc in all_codes])
+
+        total_budget_sum = sum(bc.allocated_amount for bc in all_codes)
+        utilized = sum(committed_map.get(bc.id, 0.0) for bc in all_codes)
+
+        dept_totals: dict = {}
+        for bc in all_codes:
+            dept_name = bc.department.name if bc.department else "Unassigned"
+            dept_totals[dept_name] = dept_totals.get(dept_name, 0.0) + bc.allocated_amount
+        budget_by_department = sorted(
+            [{"department": name, "amount": amount} for name, amount in dept_totals.items()],
+            key=lambda d: d["amount"], reverse=True,
+        )
+
+        budget_summary = {
+            "total_budget": total_budget_sum,
+            "budget_utilized": utilized,
+            "utilization_pct": round((utilized / total_budget_sum * 100), 1) if total_budget_sum else 0,
+            "budget_by_department": budget_by_department,
+        }
+        _cache_set("dashboard_stats:budget_summary", budget_summary)
+
+    return {
+        "pending_approvals": pending,
+        "approved_requisitions": approved,
+        "rejected_requisitions": rejected,
+        "total_budget": budget_summary["total_budget"],
+        "budget_utilized": budget_summary["budget_utilized"],
+        "utilization_pct": budget_summary["utilization_pct"],
+        "budget_by_department": budget_summary["budget_by_department"],
+        "recent_activity": [
+            {"ref_no": r.ref_no, "status": r.status, "amount": r.amount_requested,
+             "department": r.department.name if r.department else None,
+             "created_at": r.created_at.isoformat()}
+            for r in recent
+        ],
+    }
+
+
+@app.get("/api/reports/audit-view/{req_id}")
+def audit_view(req_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    r = db.query(Requisition).filter(Requisition.id == req_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    return requisition_to_dict(r)
+
+
+@app.get("/api/reports/audit-logs")
+def get_audit_logs(db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "auditor", "clerk"))):
+    logs = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(300).all()
+    return [
+        {"id": l.id, "user": l.user_id, "action": l.action, "details": l.details,
+         "created_at": l.created_at.isoformat()}
+        for l in logs
+    ]
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}
