@@ -3029,9 +3029,16 @@ def approval_action(req_id: int, payload: ApprovalActionIn,
     if payload.action not in ("approve", "reject", "return"):
         raise HTTPException(status_code=400, detail="Action must be approve, reject or return")
 
+    comments = (payload.comments or "").strip()
+    if payload.action in ("reject", "return") and not comments:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a reason for this {'rejection' if payload.action == 'reject' else 'return'}"
+        )
+
     history = ApprovalHistory(
         requisition_id=r.id, stage=stage, actor_id=user.id,
-        action=payload.action, comments=payload.comments,
+        action=payload.action, comments=comments or None,
     )
     db.add(history)
 
