@@ -557,7 +557,7 @@ class Document(Base):
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
     stored_path = Column(String(500), nullable=False)
-    doc_type = Column(String(50), default="supporting")  # supporting / receipt / voucher / attendance / other
+    doc_type = Column(String(50), default="cheque")  # cheque / receipt / photos / attendance / report
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -2810,13 +2810,17 @@ def requisition_to_dict(r: Requisition) -> dict:
             } for a in r.approvals
         ],
         "documents": [
-            {"id": d.id, "filename": d.filename, "doc_type": d.doc_type, "url": f"/files/{d.stored_path}"}
+            {
+                "id": d.id, "filename": d.filename, "doc_type": d.doc_type,
+                "url": f"/files/{d.stored_path}",
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+            }
             for d in r.documents
         ],
         "accountability": {
             "status": r.accountability.status if r.accountability else None,
             "remarks": r.accountability.remarks if r.accountability else None,
-            "has_voucher": any(d.doc_type == "voucher" for d in r.documents),
+            "has_cheque": any(d.doc_type == "cheque" for d in r.documents),
             "has_documents": len(r.documents) > 0,
         } if r.accountability else None,
     }
@@ -3117,7 +3121,7 @@ def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_cu
 # ---------------------------- Documents (Backblaze B2) -----------------------
 
 @app.post("/api/requisitions/{req_id}/documents")
-async def upload_document(req_id: int, doc_type: str = "supporting", file: UploadFile = File(...),
+async def upload_document(req_id: int, doc_type: str = "cheque", file: UploadFile = File(...),
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     r = db.query(Requisition).filter(Requisition.id == req_id).first()
     if not r:
@@ -3248,11 +3252,11 @@ def update_accountability(req_id: int, payload: AccountabilityIn,
                 status_code=400,
                 detail="Cannot verify: no accountability documents have been uploaded for this requisition yet."
             )
-        has_voucher = any(d.doc_type == "voucher" for d in r.documents)
-        if not has_voucher:
+        has_cheque = any(d.doc_type == "cheque" for d in r.documents)
+        if not has_cheque:
             raise HTTPException(
                 status_code=400,
-                detail="Cannot verify: a Payment Voucher must be uploaded for this requisition before it can be verified."
+                detail="Cannot verify: a Disbursed Activity Cheque must be uploaded for this requisition before it can be verified."
             )
 
     r.accountability.status = payload.status
