@@ -557,7 +557,7 @@ class Document(Base):
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
     stored_path = Column(String(500), nullable=False)
-    doc_type = Column(String(50), default="cheque")  # cheque / receipt / photos / attendance / report
+    doc_type = Column(String(50), default="cheque")  # cheque / receipt / photos / attendance / payment_sheet / acknowledgement / expense_report / report
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
