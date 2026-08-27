@@ -462,6 +462,51 @@ class RevenueSourceItem(Base):
     revenue_source = relationship("RevenueSource", back_populates="items")
 
 
+class RevenueLineItem(Base):
+    """A single row on one of the three Programme-Based Budgeting System
+    (PBS) revenue performance pages:
+      - "monthly"   → Approved Monthly Revenue Budget Estimates and Actual
+                       LG Revenue & Transfers Realized (12 monthly periods)
+      - "quarterly" → Approved Quarterly Revenue Budget Estimates and
+                       Quarterly Revenue Performance Gap (4 quarterly periods)
+      - "summary"   → Summary of the LG Annual and Quarterly Revenue
+                       Performance (4 quarterly periods, one row per
+                       top-level revenue category)
+
+    One table serves all three pages (discriminated by period_type) since
+    they share an identical shape: a Chart-of-Accounts style hierarchy of
+    category / sub-category / item / subtotal / grand-total rows, each
+    carrying an Approved Budget Estimate and an Actual Realized amount per
+    period, mirroring the Council's "ANNUAL Budget Framework" workbook.
+    The Performance Gap shown on the quarterly/summary pages is simply
+    Approved − Actual and is computed on read rather than stored (see
+    revenue_line_item_to_out below), so it can never drift out of sync.
+    """
+    __tablename__ = "revenue_line_items"
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
+    period_type = Column(String(20), nullable=False)  # monthly | quarterly | summary
+    sort_order = Column(Integer, default=0, nullable=False)
+    code = Column(String(30))
+    label = Column(Text, nullable=False)
+    # category = header-only row (e.g. "263  Central Government Transfers
+    # (GoU)"), item = a real revenue line with figures, subtotal = a "Sub
+    # Total" row, grand_total = the sheet's final "Grand Total" row.
+    row_type = Column(String(20), default="item", nullable=False)
+    indent = Column(Integer, default=0)
+    # JSON-encoded list of floats — length 12 for "monthly", 4 for
+    # "quarterly"/"summary". Stored as Text (not the SQLAlchemy JSON type)
+    # so this works identically on SQLite and Postgres without relying on
+    # dialect-specific JSON support.
+    approved_periods = Column(Text)
+    approved_annual = Column(Float, default=0)
+    actual_periods = Column(Text)
+    actual_annual = Column(Float, default=0)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+    work_plan = relationship("WorkPlan")
+
+
 class Activity(Base):
     __tablename__ = "activities"
     id = Column(Integer, primary_key=True, index=True)
@@ -964,6 +1009,66 @@ class RevenueSourceImportResult(BaseModel):
 
 
 class RevenueSourceClearResult(BaseModel):
+    deleted: int
+
+
+PERIOD_TYPES = ("monthly", "quarterly", "summary")
+_PERIOD_COUNTS = {"monthly": 12, "quarterly": 4, "summary": 4}
+
+
+class RevenueLineItemIn(BaseModel):
+    work_plan_id: int
+    period_type: str
+    code: Optional[str] = None
+    label: str
+    row_type: str = "item"
+    indent: int = 0
+    approved_periods: List[Union[float, int, str]] = []
+    approved_annual: Optional[Union[float, int, str]] = None
+    actual_periods: List[Union[float, int, str]] = []
+    actual_annual: Optional[Union[float, int, str]] = None
+    sort_order: Optional[int] = None
+
+
+class RevenueLineItemUpdate(BaseModel):
+    code: Optional[str] = None
+    label: Optional[str] = None
+    row_type: Optional[str] = None
+    indent: Optional[int] = None
+    approved_periods: Optional[List[Union[float, int, str]]] = None
+    approved_annual: Optional[Union[float, int, str]] = None
+    actual_periods: Optional[List[Union[float, int, str]]] = None
+    actual_annual: Optional[Union[float, int, str]] = None
+    sort_order: Optional[int] = None
+
+
+class RevenueLineItemOut(BaseModel):
+    id: int
+    work_plan_id: int
+    period_type: str
+    sort_order: int
+    code: Optional[str] = None
+    label: str
+    row_type: str
+    indent: int
+    approved_periods: List[float]
+    approved_annual: float
+    actual_periods: List[float]
+    actual_annual: float
+    gap_periods: List[float]
+    gap_annual: float
+
+    class Config:
+        from_attributes = True
+
+
+class RevenueLineItemImportResult(BaseModel):
+    created: int
+    skipped: int = 0
+    errors: List[str] = []
+
+
+class RevenueLineItemClearResult(BaseModel):
     deleted: int
 
 
@@ -2039,6 +2144,384 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
         skipped=skipped,
         errors=errors[:30],
     )
+
+# ------------------------ PBS Revenue Performance Pages ---------------------
+# Backs the three Programme-Based Budgeting System (PBS) revenue pages:
+#   1. Approved Monthly Revenue Budget Estimates and Actual LG Revenue &
+#      Transfers Realized      (period_type="monthly",   12 periods)
+#   2. Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
+#      Performance Gap          (period_type="quarterly", 4 periods)
+#   3. Summary of the LG Annual and Quarterly Revenue Performance
+#      (period_type="summary",  4 periods)
+# All three share the RevenueLineItem model/table (see model definition
+# above) and this one set of CRUD + Excel-import endpoints.
+
+_PBS_SUBTOTAL_RE = re.compile(r"^sub[\s\-]?total", re.I)
+_PBS_GRANDTOTAL_RE = re.compile(r"grand\s*total", re.I)
+
+
+def _pbs_periods_json(values: Optional[List], period_count: int) -> str:
+    vals = [parse_amount(v) for v in (values or [])]
+    if len(vals) < period_count:
+        vals = vals + [0.0] * (period_count - len(vals))
+    else:
+        vals = vals[:period_count]
+    return json.dumps(vals)
+
+
+def _pbs_periods_list(raw: Optional[str], period_count: int) -> List[float]:
+    if not raw:
+        return [0.0] * period_count
+    try:
+        vals = json.loads(raw)
+    except (TypeError, ValueError):
+        return [0.0] * period_count
+    vals = [parse_amount(v) for v in vals]
+    if len(vals) < period_count:
+        vals = vals + [0.0] * (period_count - len(vals))
+    return vals[:period_count]
+
+
+def revenue_line_item_to_out(r: RevenueLineItem) -> RevenueLineItemOut:
+    period_count = _PERIOD_COUNTS.get(r.period_type, 12)
+    approved = _pbs_periods_list(r.approved_periods, period_count)
+    actual = _pbs_periods_list(r.actual_periods, period_count)
+    gap = [round(approved[i] - actual[i], 2) for i in range(period_count)]
+    return RevenueLineItemOut(
+        id=r.id,
+        work_plan_id=r.work_plan_id,
+        period_type=r.period_type,
+        sort_order=r.sort_order,
+        code=r.code,
+        label=r.label,
+        row_type=r.row_type,
+        indent=r.indent or 0,
+        approved_periods=approved,
+        approved_annual=parse_amount(r.approved_annual),
+        actual_periods=actual,
+        actual_annual=parse_amount(r.actual_annual),
+        gap_periods=gap,
+        gap_annual=round(parse_amount(r.approved_annual) - parse_amount(r.actual_annual), 2),
+    )
+
+
+def _classify_pbs_row(code, label, approved_vals: List[float], actual_vals: List[float]) -> str:
+    label_norm = (label or "").strip()
+    if _PBS_GRANDTOTAL_RE.search(label_norm):
+        return "grand_total"
+    if _PBS_SUBTOTAL_RE.match(label_norm):
+        return "subtotal"
+    code_str = str(code).strip() if code is not None and str(code).strip() else ""
+    # Leaf line items in this Chart of Accounts always carry a 5-digit
+    # code (e.g. 26330); 3/4-digit codes (263, 2633) are category headers.
+    if code_str and code_str.replace(".", "").isdigit() and len(code_str.replace(".", "")) >= 5:
+        return "item"
+    has_amount = any(abs(v) > 0.0001 for v in (approved_vals + actual_vals))
+    if has_amount:
+        return "item"
+    return "category"
+
+
+def _pbs_indent(code, row_type: str) -> int:
+    if row_type == "grand_total":
+        return 0
+    if row_type == "subtotal":
+        return 1
+    code_str = str(code).strip() if code is not None and str(code).strip() else ""
+    if code_str and code_str.replace(".", "").isdigit():
+        return max(0, len(code_str.replace(".", "")) - 3)
+    return 1
+
+
+def _parse_monthly_revenue_sheet(ws) -> List[dict]:
+    """Layout: A=Code, B=Fund Category and Source of Financing, C=blank,
+    D:O (idx 3-14)=12 monthly Approved figures, P (idx 15)=Annual Approved,
+    Q:AB (idx 16-27)=12 monthly Actual figures, AC (idx 28)=Annual Actual."""
+    out = []
+    all_rows = list(ws.iter_rows(values_only=True))
+    for row in all_rows[2:]:
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+        code = row[0]
+        label = row[1] if len(row) > 1 else None
+        if label is None or str(label).strip() == "":
+            continue
+        approved = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(3, 15)]
+        approved_annual = parse_amount(row[15]) if len(row) > 15 else sum(approved)
+        actual = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(16, 28)]
+        actual_annual = parse_amount(row[28]) if len(row) > 28 else sum(actual)
+        row_type = _classify_pbs_row(code, label, approved, actual)
+        out.append({
+            "code": str(code).strip() if code is not None and str(code).strip() != "" else None,
+            "label": str(label).strip(),
+            "row_type": row_type,
+            "indent": _pbs_indent(code, row_type),
+            "approved_periods": approved,
+            "approved_annual": approved_annual,
+            "actual_periods": actual,
+            "actual_annual": actual_annual,
+        })
+    return out
+
+
+def _parse_quarterly_style_sheet(ws) -> List[dict]:
+    """Shared by the "quarterly" and "summary" pages, which use an
+    identical column layout: A=Code, B=Fund Category and Source of
+    Financing, C:F (idx 2-5)=Q1-Q4 Approved, G (idx 6)=Annual Approved,
+    H:K (idx 7-10)=Q1-Q4 Actual, L (idx 11)=Annual Actual. Any Gap columns
+    present in the workbook are ignored — the gap is always recomputed as
+    Approved − Actual on read."""
+    out = []
+    all_rows = list(ws.iter_rows(values_only=True))
+    for row in all_rows[2:]:
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+        code = row[0]
+        label = row[1] if len(row) > 1 else None
+        if label is None or str(label).strip() == "":
+            continue
+        approved = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(2, 6)]
+        approved_annual = parse_amount(row[6]) if len(row) > 6 else sum(approved)
+        actual = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(7, 11)]
+        actual_annual = parse_amount(row[11]) if len(row) > 11 else sum(actual)
+        row_type = _classify_pbs_row(code, label, approved, actual)
+        out.append({
+            "code": str(code).strip() if code is not None and str(code).strip() != "" else None,
+            "label": str(label).strip(),
+            "row_type": row_type,
+            "indent": _pbs_indent(code, row_type),
+            "approved_periods": approved,
+            "approved_annual": approved_annual,
+            "actual_periods": actual,
+            "actual_annual": actual_annual,
+        })
+    return out
+
+
+@app.get("/api/revenue-line-items", response_model=List[RevenueLineItemOut])
+def list_revenue_line_items(work_plan_id: Optional[int] = None, period_type: Optional[str] = None,
+                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(RevenueLineItem)
+    if work_plan_id:
+        q = q.filter(RevenueLineItem.work_plan_id == work_plan_id)
+    if period_type:
+        q = q.filter(RevenueLineItem.period_type == period_type)
+    q = q.order_by(RevenueLineItem.sort_order.asc(), RevenueLineItem.id.asc())
+    return [revenue_line_item_to_out(r) for r in q.all()]
+
+
+@app.post("/api/revenue-line-items", response_model=RevenueLineItemOut)
+def create_revenue_line_item(payload: RevenueLineItemIn, db: Session = Depends(get_db),
+                              admin: User = Depends(require_roles("admin"))):
+    if payload.period_type not in PERIOD_TYPES:
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+    wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+    if not (payload.label or "").strip():
+        raise HTTPException(status_code=400, detail="Please provide a label for this row")
+
+    period_count = _PERIOD_COUNTS[payload.period_type]
+    approved_vals = [parse_amount(v) for v in (payload.approved_periods or [])][:period_count]
+    actual_vals = [parse_amount(v) for v in (payload.actual_periods or [])][:period_count]
+
+    max_order = db.query(func.max(RevenueLineItem.sort_order)).filter(
+        RevenueLineItem.work_plan_id == payload.work_plan_id,
+        RevenueLineItem.period_type == payload.period_type,
+    ).scalar() or 0
+
+    r = RevenueLineItem(
+        work_plan_id=payload.work_plan_id,
+        period_type=payload.period_type,
+        sort_order=payload.sort_order if payload.sort_order is not None else int(max_order) + 1,
+        code=(payload.code or "").strip() or None,
+        label=payload.label.strip(),
+        row_type=payload.row_type if payload.row_type in ("category", "item", "subtotal", "grand_total") else "item",
+        indent=payload.indent or 0,
+        approved_periods=_pbs_periods_json(approved_vals, period_count),
+        approved_annual=parse_amount(payload.approved_annual) if payload.approved_annual not in (None, "") else sum(approved_vals),
+        actual_periods=_pbs_periods_json(actual_vals, period_count),
+        actual_annual=parse_amount(payload.actual_annual) if payload.actual_annual not in (None, "") else sum(actual_vals),
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_line_item.create", f"{payload.period_type}: {r.label}")
+    return revenue_line_item_to_out(r)
+
+
+@app.patch("/api/revenue-line-items/{item_id}", response_model=RevenueLineItemOut)
+def update_revenue_line_item(item_id: int, payload: RevenueLineItemUpdate, db: Session = Depends(get_db),
+                              admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueLineItem).filter(RevenueLineItem.id == item_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Row not found")
+    period_count = _PERIOD_COUNTS.get(r.period_type, 12)
+    data = payload.dict(exclude_unset=True)
+
+    if "approved_periods" in data:
+        vals = [parse_amount(v) for v in (data.pop("approved_periods") or [])]
+        r.approved_periods = _pbs_periods_json(vals, period_count)
+        if "approved_annual" not in data or data.get("approved_annual") in (None, ""):
+            r.approved_annual = sum(vals[:period_count])
+    if "actual_periods" in data:
+        vals = [parse_amount(v) for v in (data.pop("actual_periods") or [])]
+        r.actual_periods = _pbs_periods_json(vals, period_count)
+        if "actual_annual" not in data or data.get("actual_annual") in (None, ""):
+            r.actual_annual = sum(vals[:period_count])
+    if "approved_annual" in data and data["approved_annual"] not in (None, ""):
+        r.approved_annual = parse_amount(data.pop("approved_annual"))
+    else:
+        data.pop("approved_annual", None)
+    if "actual_annual" in data and data["actual_annual"] not in (None, ""):
+        r.actual_annual = parse_amount(data.pop("actual_annual"))
+    else:
+        data.pop("actual_annual", None)
+    if "code" in data:
+        r.code = (data.pop("code") or "").strip() or None
+    if "row_type" in data:
+        rt = data.pop("row_type")
+        if rt in ("category", "item", "subtotal", "grand_total"):
+            r.row_type = rt
+    for field, value in data.items():
+        setattr(r, field, value)
+
+    db.commit()
+    db.refresh(r)
+    log_action(db, admin.id, "revenue_line_item.update", f"{r.period_type}: {r.label}")
+    return revenue_line_item_to_out(r)
+
+
+@app.delete("/api/revenue-line-items/clear", response_model=RevenueLineItemClearResult)
+def clear_revenue_line_items(work_plan_id: int, period_type: str, db: Session = Depends(get_db),
+                              admin: User = Depends(require_roles("admin"))):
+    if period_type not in PERIOD_TYPES:
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+    rows = db.query(RevenueLineItem).filter(
+        RevenueLineItem.work_plan_id == work_plan_id,
+        RevenueLineItem.period_type == period_type,
+    ).all()
+    deleted = len(rows)
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    log_action(db, admin.id, "revenue_line_item.clear_all",
+               f"Cleared {deleted} {period_type} revenue row(s) from work plan #{work_plan_id}")
+    return RevenueLineItemClearResult(deleted=deleted)
+
+
+@app.delete("/api/revenue-line-items/{item_id}")
+def delete_revenue_line_item(item_id: int, db: Session = Depends(get_db),
+                              admin: User = Depends(require_roles("admin"))):
+    r = db.query(RevenueLineItem).filter(RevenueLineItem.id == item_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Row not found")
+    label = r.label
+    db.delete(r)
+    db.commit()
+    log_action(db, admin.id, "revenue_line_item.delete", label)
+    return {"ok": True}
+
+
+@app.post("/api/revenue-line-items/import", response_model=RevenueLineItemImportResult)
+async def import_revenue_line_items(work_plan_id: int, period_type: str, file: UploadFile = File(...),
+                                     db: Session = Depends(get_db),
+                                     admin: User = Depends(require_roles("admin"))):
+    """Imports one of the three PBS revenue sheets ("Monthly Revenue
+    Projections", "Quarterly Revenue Projections" or "Summary") from the
+    Council's Annual Budget Framework workbook. Importing REPLACES every
+    existing row for this work plan + period_type — the workbook is the
+    master copy of the whole table, not a set of rows to merge in.
+
+    If the uploaded workbook has multiple sheets (as the combined "ANNUAL
+    Budget Framework" file does), the sheet whose name best matches the
+    requested period_type is used automatically, so the same workbook can
+    be dropped onto any of the three Import buttons without the user
+    needing to pick the right tab themselves.
+    """
+    if period_type not in PERIOD_TYPES:
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed.",
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    hint = period_type  # "monthly" / "quarterly" / "summary" all appear literally in this workbook's sheet names
+    ws = None
+    for name in wb.sheetnames:
+        if hint in name.lower():
+            ws = wb[name]
+            break
+    if ws is None:
+        ws = wb.active
+
+    parsed = _parse_monthly_revenue_sheet(ws) if period_type == "monthly" else _parse_quarterly_style_sheet(ws)
+
+    if not parsed:
+        raise HTTPException(
+            status_code=400,
+            detail="No recognisable data rows were found in the sheet. Expected the first two rows to be "
+                   "headers (Code / Fund Category and Source of Financing / period columns…) followed by data.",
+        )
+
+    period_count = _PERIOD_COUNTS[period_type]
+
+    existing = db.query(RevenueLineItem).filter(
+        RevenueLineItem.work_plan_id == work_plan_id,
+        RevenueLineItem.period_type == period_type,
+    ).all()
+    deleted = len(existing)
+    for r in existing:
+        db.delete(r)
+    db.flush()
+
+    created = 0
+    for i, row in enumerate(parsed):
+        db.add(RevenueLineItem(
+            work_plan_id=work_plan_id,
+            period_type=period_type,
+            sort_order=i,
+            code=row["code"],
+            label=row["label"],
+            row_type=row["row_type"],
+            indent=row["indent"],
+            approved_periods=_pbs_periods_json(row["approved_periods"], period_count),
+            approved_annual=row["approved_annual"],
+            actual_periods=_pbs_periods_json(row["actual_periods"], period_count),
+            actual_annual=row["actual_annual"],
+        ))
+        created += 1
+
+    db.commit()
+
+    log_action(
+        db,
+        admin.id,
+        "revenue_line_item.import",
+        f"Imported {created} {period_type} revenue row(s) into work plan #{work_plan_id} from {file.filename} "
+        f"(replaced {deleted} existing row(s))",
+    )
+
+    return RevenueLineItemImportResult(created=created, skipped=0, errors=[])
+
 
 # ---------------------------- Budget Codes ----------------------------------
 
