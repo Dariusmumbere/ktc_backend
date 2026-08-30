@@ -343,6 +343,23 @@ class WorkPlan(Base):
     revenue_sources = relationship("RevenueSource", back_populates="work_plan")
 
 
+class ReportFrontmatter(Base):
+    """Singleton (id=1) row holding the editable rich-text body of the three
+    narrative sections shown above the tables on the "Approved LG Annual
+    Work Plan and Budget Estimates" page (Forward by Chairperson, Message
+    from the Town Clerk, Executive Summary). Any field left NULL simply
+    means it has never been edited yet — the frontend keeps showing its own
+    built-in default text for that section until an admin saves a change,
+    so this table only needs to store an override once one exists."""
+    __tablename__ = "report_frontmatter"
+    id = Column(Integer, primary_key=True, index=True)
+    forward_html = Column(Text, nullable=True)
+    town_clerk_html = Column(Text, nullable=True)
+    executive_summary_html = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
 class BudgetCode(Base):
     __tablename__ = "budget_codes"
     id = Column(Integer, primary_key=True, index=True)
@@ -840,6 +857,17 @@ class WorkPlanIn(BaseModel):
 class WorkPlanOut(WorkPlanIn):
     id: int
     is_active: bool
+    class Config:
+        from_attributes = True
+
+
+class ReportFrontmatterIn(BaseModel):
+    forward_html: Optional[str] = None
+    town_clerk_html: Optional[str] = None
+    executive_summary_html: Optional[str] = None
+
+
+class ReportFrontmatterOut(ReportFrontmatterIn):
     class Config:
         from_attributes = True
 
@@ -1659,6 +1687,41 @@ def delete_workplan(wp_id: int, db: Session = Depends(get_db), admin: User = Dep
     log_action(db, admin.id, "workplan.delete", f"{wp.title} ({wp.financial_year})")
     _invalidate_budget_code_caches()
     return {"ok": True}
+
+
+# ---------------------- Annual Work Plan report front matter ----------------
+# The "Forward by Chairperson" / "Message from the Town Clerk" / "Executive
+# Summary" narrative shown above the tables on the "Approved LG Annual Work
+# Plan and Budget Estimates" page. Stored as a single override row (id=1) so
+# it is edited once, not per work plan — the FY/date line above it is still
+# filled in per-work-plan on the frontend.
+
+@app.get("/api/annual-report-content", response_model=ReportFrontmatterOut)
+def get_annual_report_content(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.query(ReportFrontmatter).filter(ReportFrontmatter.id == 1).first()
+    if not row:
+        return ReportFrontmatterOut(forward_html=None, town_clerk_html=None, executive_summary_html=None)
+    return row
+
+
+@app.patch("/api/annual-report-content", response_model=ReportFrontmatterOut)
+def update_annual_report_content(payload: ReportFrontmatterIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    row = db.query(ReportFrontmatter).filter(ReportFrontmatter.id == 1).first()
+    if not row:
+        row = ReportFrontmatter(id=1)
+        db.add(row)
+    if payload.forward_html is not None:
+        row.forward_html = payload.forward_html
+    if payload.town_clerk_html is not None:
+        row.town_clerk_html = payload.town_clerk_html
+    if payload.executive_summary_html is not None:
+        row.executive_summary_html = payload.executive_summary_html
+    row.updated_by_id = admin.id
+    row.updated_at = dt.datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    log_action(db, admin.id, "annual_report_content.update", "Report front matter updated")
+    return row
 
 
 def _normalize_revenue_source_fields(pbs_fund_code, source_of_financing_name, functional_definition):
