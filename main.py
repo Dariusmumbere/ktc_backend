@@ -4197,9 +4197,85 @@ def _pdf_workplan_table(codes, committed_map):
     return t
 
 
-def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, sources: list) -> io.BytesIO:
-    """Assembles the full Annual Work Plan & Budget PDF: static narrative
-    sections plus the live Revenue Sources and Annual Workplan Budget tables."""
+# ---------------------------------------------------------------------------
+# PBS Revenue Performance table (monthly / quarterly / summary) — mirrors the
+# frontend's renderRevLineTable()/REV_LINE_PAGES so the PDF shows exactly the
+# same table that's on screen for whichever PBS page the download was
+# triggered from.
+# ---------------------------------------------------------------------------
+REV_LINE_PDF_PERIOD_LABELS = {
+    "monthly": ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    "quarterly": ["Q1", "Q2", "Q3", "Q4"],
+    "summary": ["Q1", "Q2", "Q3", "Q4"],
+}
+REV_LINE_PDF_HAS_GAP = {"monthly": False, "quarterly": True, "summary": True}
+
+
+def _pdf_rev_line_table(rows: list, period_type: str):
+    """Mirrors the frontend's renderRevLineTable(): Code, Fund Category and
+    Source of Financing, per-period Approved, Annual Approved, per-period
+    Actual, Annual Actual, and — for quarterly/summary only — per-period
+    Performance Gap + Annual Gap. Category rows are left blank in the figure
+    columns (matching the on-screen table), and category/subtotal/grand-total
+    rows are rendered bold."""
+    period_labels = REV_LINE_PDF_PERIOD_LABELS[period_type]
+    has_gap = REV_LINE_PDF_HAS_GAP[period_type]
+
+    header = ["Code", "Fund Category and Source of Financing"]
+    header += [f"Approved {p}" for p in period_labels] + ["Annual Approved"]
+    header += [f"Actual {p}" for p in period_labels] + ["Annual Actual"]
+    if has_gap:
+        header += [f"Gap {p}" for p in period_labels] + ["Annual Gap"]
+    data = [[Paragraph(h, _pdf_cell_b) for h in header]]
+
+    bold_row_types = ("category", "subtotal", "grand_total")
+    for r in rows:
+        is_bold = r.row_type in bold_row_types
+        blank = r.row_type == "category"
+        label_style = _pdf_cell_b if is_bold else _pdf_cell
+        num_style = _pdf_cell_rb if is_bold else _pdf_cell_r
+        label_text = ("&nbsp;&nbsp;" * (r.indent or 0)) + (r.label or "")
+        row = [Paragraph(r.code or "", label_style), Paragraph(label_text, label_style)]
+        row += [Paragraph("" if blank else _pdf_money(v), num_style) for v in r.approved_periods]
+        row.append(Paragraph("" if blank else _pdf_money(r.approved_annual), num_style))
+        row += [Paragraph("" if blank else _pdf_money(v), num_style) for v in r.actual_periods]
+        row.append(Paragraph("" if blank else _pdf_money(r.actual_annual), num_style))
+        if has_gap:
+            row += [Paragraph("" if blank else _pdf_money(v), num_style) for v in r.gap_periods]
+            row.append(Paragraph("" if blank else _pdf_money(r.gap_annual), num_style))
+        data.append(row)
+
+    period_count = len(period_labels)
+    if period_type == "monthly":
+        code_w, label_w, period_w, annual_w = 24, 68, 24, 34
+    else:
+        code_w, label_w, period_w, annual_w = 30, 130, 40, 45
+    col_widths = [code_w, label_w] + [period_w] * period_count + [annual_w] + [period_w] * period_count + [annual_w]
+    if has_gap:
+        col_widths += [period_w] * period_count + [annual_w]
+
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(_pdf_table_style(header_rows=1))
+    return t
+
+
+def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, page: str, revline_data: dict) -> io.BytesIO:
+    """Assembles the Work Plan & Budget PDF for one PBS page. The first few
+    pages — cover, Forward by the Chairperson, Message from the Town Clerk,
+    and Executive Summary — are always the same regardless of which page the
+    download was triggered from. Only the tables that follow differ, and they
+    mirror exactly what's visible on screen for that page:
+      - "rev-monthly": the Monthly Local Revenue/GoU Transfers table only.
+      - "expenditure": Department Budget Summary + the Annual Work Plan and
+        Expenditure Estimates table (no revenue tables — this page hides
+        them, see applyWorkplanSubtabDisplay() in the frontend).
+      - "annual" (default): Summary of the LG Annual and Quarterly Revenue
+        Estimates + Department Budget Summary + Approved Quarterly Revenue
+        Budget Estimates and Quarterly Revenue Performance Gap + the Annual
+        Work Plan and Budget Estimates table.
+    `revline_data` maps period_type ("monthly"/"quarterly"/"summary") to the
+    list of RevenueLineItemOut rows needed for that page.
+    """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=28, bottomMargin=28, leftMargin=28, rightMargin=28)
 
@@ -4237,27 +4313,48 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     story += _pdf_exec_summary_flowables()
     story.append(PageBreak())
 
-    story.append(Paragraph("Department Budget Summary", _pdf_h2))
-    story.append(_pdf_dept_summary_table(codes, committed_map))
-    story.append(Spacer(1, 16))
-    story.append(Paragraph("Revenue Sources Summary", _pdf_h2))
-    story.append(_pdf_revenue_summary_table(sources))
-    story.append(PageBreak())
-    story.append(Paragraph("APPROVED COUNCIL BUDGET FRAMEWORK PAPER AND PRELIMINARY REVENUE AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
-    story.append(_pdf_revenue_detail_table(sources))
-    story.append(PageBreak())
-    story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND BUDGET ESTIMATES FOR FY 2026/2027", _pdf_h2))
-    story.append(_pdf_workplan_table(codes, committed_map))
+    # ---- Page-specific content: mirrors exactly what's shown on screen ----
+    if page == "rev-monthly":
+        story.append(Paragraph("MONTHLY LOCAL REVENUE/GOU TRANSFERS ESTIMATES VS. ACTUAL REALIZED", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("monthly", []), "monthly"))
+    elif page == "expenditure":
+        story.append(Paragraph("Department Budget Summary", _pdf_h2))
+        story.append(_pdf_dept_summary_table(codes, committed_map))
+        story.append(Spacer(1, 16))
+        story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
+        story.append(_pdf_workplan_table(codes, committed_map))
+    else:  # "annual"
+        story.append(Paragraph("SUMMARY OF THE LG ANNUAL AND QUARTERLY REVENUE ESTIMATES", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("summary", []), "summary"))
+        story.append(PageBreak())
+        story.append(Paragraph("Department Budget Summary", _pdf_h2))
+        story.append(_pdf_dept_summary_table(codes, committed_map))
+        story.append(Spacer(1, 16))
+        story.append(Paragraph("APPROVED QUARTERLY REVENUE BUDGET ESTIMATES AND QUARTERLY REVENUE PERFORMANCE GAP", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("quarterly", []), "quarterly"))
+        story.append(PageBreak())
+        story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND BUDGET ESTIMATES FOR FY 2026/2027", _pdf_h2))
+        story.append(_pdf_workplan_table(codes, committed_map))
 
     doc.build(story)
     buf.seek(0)
     return buf
 
 
+_REPORT_PDF_PAGES = ("rev-monthly", "expenditure", "annual")
+_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["summary", "quarterly"]}
+
+
 @app.get("/api/work-plans/{wp_id}/report-pdf")
-def download_workplan_report_pdf(wp_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Streams the full Annual Work Plan & Budget PDF (narrative + Revenue
-    Sources + Annual Workplan Budget tables) for one work plan."""
+def download_workplan_report_pdf(wp_id: int, page: str = Query("annual"), db: Session = Depends(get_db),
+                                  user: User = Depends(get_current_user)):
+    """Streams the Work Plan & Budget PDF for one work plan. `page` selects
+    which PBS page's content the PDF mirrors — "rev-monthly", "expenditure",
+    or "annual" (default) — while the cover/forward/clerk-message/executive-
+    summary front matter always stays the same. See build_workplan_report_pdf
+    for exactly what each page includes."""
+    if page not in _REPORT_PDF_PAGES:
+        page = "annual"
     wp = db.query(WorkPlan).filter(WorkPlan.id == wp_id).first()
     if not wp:
         raise HTTPException(status_code=404, detail="Work plan not found")
@@ -4268,10 +4365,26 @@ def download_workplan_report_pdf(wp_id: int, db: Session = Depends(get_db), user
         .order_by(BudgetCode.id.asc())
         .all()
     )
-    sources = db.query(RevenueSource).filter(RevenueSource.work_plan_id == wp_id).order_by(RevenueSource.id.asc()).all()
     committed_map = _bulk_committed_amounts(db, [c.id for c in codes])
-    buf = build_workplan_report_pdf(wp, codes, committed_map, sources)
-    fname = f"Annual_Work_Plan_FY_{wp.financial_year.replace('/', '-')}.pdf"
+
+    revline_data = {}
+    for period_type in _REPORT_PDF_PERIOD_TYPES_NEEDED[page]:
+        rows = (
+            db.query(RevenueLineItem)
+            .filter(RevenueLineItem.work_plan_id == wp_id, RevenueLineItem.period_type == period_type)
+            .order_by(RevenueLineItem.sort_order.asc(), RevenueLineItem.id.asc())
+            .all()
+        )
+        revline_data[period_type] = [revenue_line_item_to_out(r) for r in rows]
+
+    buf = build_workplan_report_pdf(wp, codes, committed_map, page, revline_data)
+    fy = wp.financial_year.replace('/', '-')
+    page_filenames = {
+        "rev-monthly": f"Monthly_Local_Revenue_GoU_Transfers_FY_{fy}.pdf",
+        "expenditure": f"Approved_LG_Expenditure_Estimates_FY_{fy}.pdf",
+        "annual": f"Annual_Work_Plan_FY_{fy}.pdf",
+    }
+    fname = page_filenames[page]
     return StreamingResponse(
         buf, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
