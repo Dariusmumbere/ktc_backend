@@ -3247,6 +3247,270 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
                                    errors=errors[:30], total_warnings=len(errors))
 
 
+# ---------------------------- PIAP / "Part 2" layout import ------------------
+# The LLG's own offline template for departmental activity outputs is laid
+# out very differently to the flat one-row-per-activity sheet the importer
+# above expects: it's transposed (one COLUMN per activity output, one ROW
+# per field — Service Area, Programme, Budget Output Code, PIAP Output
+# Description, Q1-Q4, etc.), in blocks of up to five activity outputs per
+# department, each block preceded by repeating "LLG Vote" / "Part 2:" /
+# "Financial Year" / "Department:" / "Department Code:" header rows. This
+# is the layout used by the sheet commonly named "Sheet2" in those
+# workbooks. Both this importer and the flat one write into the exact same
+# `budget_codes` table, so rows imported either way show up in both the
+# flat Annual Work Plan table and the PIAP-format table below it.
+
+_PIAP_FIELD_ALIASES = {
+    "service area": "service_area",
+    "programme": "programme",
+    "program": "programme",
+    "sub-programme": "sub_programme",
+    "sub programme": "sub_programme",
+    "sub program": "sub_programme",
+    "budget output code": "code",
+    "activity output description": "output_description",
+    "piap output description": "piap_output_description",
+    "piap output indicator": "piap_output_indicator",
+    "unit of measure": "unit_of_measure",
+    "baseline value": "baseline_value",
+    "planned target": "planned_target",
+    "actual output": "actual_output",
+    "q1": "q1_amount",
+    "q2": "q2_amount",
+    "q3": "q3_amount",
+    "q4": "q4_amount",
+    "annual budget (ugx)": "_annual_budget_ignored",
+    "annual budget": "_annual_budget_ignored",
+    "funding source": "funding_source",
+    "responsible party": "responsible_party",
+}
+
+
+def _parse_piap_sheet(ws) -> List[dict]:
+    """Reads one worksheet in the transposed "Part 2" layout described
+    above and returns a flat list of dicts — one per activity output
+    column found, each carrying its department_name/department_code plus
+    whatever field values were present in its block. Label matching is
+    driven entirely by the text in column A (normalized the same way as
+    every other importer in this file), so field rows can appear in any
+    order and stray/unrecognised rows are simply ignored, rather than
+    relying on a fixed row layout that would break on minor template
+    variations."""
+    all_rows = list(ws.iter_rows(values_only=True))
+    entries: List[dict] = []
+    current_department: Optional[str] = None
+    current_department_code: Optional[str] = None
+    active_cols: Optional[List[int]] = None
+    block: dict = {}
+
+    def _flush():
+        nonlocal block, active_cols
+        if active_cols:
+            for idx in active_cols:
+                data = block.get(idx) or {}
+                if any(v not in (None, "") for v in data.values()):
+                    entry = {"department_name": current_department, "department_code": current_department_code}
+                    entry.update(data)
+                    entries.append(entry)
+        block = {}
+        active_cols = None
+
+    for row in all_rows:
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+        label = _normalize_header_key(row[0])
+        if label == "llg vote":
+            _flush()
+            continue
+        if label.startswith("part 2"):
+            continue
+        if label == "financial year":
+            continue
+        if label == "department:":
+            _flush()
+            if len(row) > 1 and row[1] not in (None, ""):
+                current_department = str(row[1]).strip()
+            continue
+        if label == "department code:":
+            if len(row) > 1 and row[1] not in (None, ""):
+                current_department_code = str(row[1]).strip()
+            continue
+        if label == "activity output number":
+            _flush()
+            active_cols = [idx for idx in range(1, len(row)) if row[idx] not in (None, "")]
+            block = {idx: {} for idx in active_cols}
+            continue
+        field = _PIAP_FIELD_ALIASES.get(label)
+        if field and active_cols:
+            for idx in active_cols:
+                block[idx][field] = row[idx] if idx < len(row) else None
+    _flush()
+    return entries
+
+
+@app.post("/api/budget-codes/import-piap", response_model=BudgetCodeImportResult)
+async def import_budget_codes_piap(work_plan_id: int, file: UploadFile = File(...),
+                                    db: Session = Depends(get_db),
+                                    admin: User = Depends(require_roles("admin"))):
+    """Bulk-create Activity & Budget Estimate rows from an uploaded Excel
+    workbook laid out in the transposed "Part 2: Proposed LLG Departmental
+    Activity Outputs and Expenditure Estimates" format (see
+    _parse_piap_sheet docstring). Powers the Import button on the
+    PIAP-format table on the Approved LG Annual Work Plan and Budget
+    Estimates page. Rows land in the same `budget_codes` table as
+    /api/budget-codes/import, using the same department-matching and
+    duplicate-entry rules.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel import is not available on this server — the 'openpyxl' package is not installed.",
+        )
+
+    wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
+    if not wp:
+        raise HTTPException(status_code=400, detail="Selected work plan does not exist")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel workbook")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
+
+    # This layout is very often literally on a sheet named "Sheet2" in
+    # workbooks exported from the LLG's own template, so try that sheet
+    # first, then fall back to scanning every other sheet in the workbook
+    # for one that actually parses to at least one activity output.
+    candidate_sheets = []
+    if "Sheet2" in wb.sheetnames:
+        candidate_sheets.append(wb["Sheet2"])
+    for name in wb.sheetnames:
+        ws = wb[name]
+        if ws not in candidate_sheets:
+            candidate_sheets.append(ws)
+
+    piap_entries: List[dict] = []
+    for ws in candidate_sheets:
+        piap_entries = _parse_piap_sheet(ws)
+        if piap_entries:
+            break
+
+    if not piap_entries:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not find any 'Activity Output Number' blocks in this workbook. Make sure it "
+                   "uses the Part 2 Departmental Activity Outputs layout (one column per activity "
+                   "output, repeating 'LLG Vote' / 'Department:' header rows) — e.g. the LLG's Sheet2 template.",
+        )
+
+    all_departments = db.query(Department).all()
+    departments_by_normalized_name = {_normalize_dept_name(d.name): d for d in all_departments}
+    departments_by_code = {_normalize_header_key(d.code): d for d in all_departments}
+
+    existing_budget_code_keys = _existing_budget_code_keys(db, work_plan_id)
+
+    def _text(v):
+        s = str(v).strip() if v is not None else ""
+        return s or None
+
+    def _num_with_note(v):
+        value, was_text = parse_leading_number(v)
+        note = None
+        if was_text:
+            _, _, original = parse_amount_verbose(v)
+            note = original or None
+        return value, note
+
+    def _num(v, field_key, row_warnings):
+        value, ok, original = parse_amount_verbose(v)
+        if not ok:
+            label = _NUMERIC_FIELD_LABELS.get(field_key, field_key)
+            row_warnings.append(f"'{original}' could not be read as a number for {label} — treated as 0")
+        return value
+
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    for i, entry in enumerate(piap_entries, start=1):
+        row_warnings: List[str] = []
+
+        dept_name_raw = entry.get("department_name")
+        dept_code_raw = entry.get("department_code")
+        output_description = _text(entry.get("output_description"))
+        code = _text(entry.get("code"))
+
+        if not dept_name_raw:
+            skipped += 1
+            errors.append(f"Activity output #{i}: no Department found for its block — skipped.")
+            continue
+
+        dept = departments_by_normalized_name.get(_normalize_dept_name(dept_name_raw))
+        if not dept and dept_code_raw:
+            dept = departments_by_code.get(_normalize_header_key(dept_code_raw))
+        if not dept:
+            skipped += 1
+            errors.append(
+                f"Activity output #{i}: department '{dept_name_raw}' does not exist — skipped. "
+                f"Add it under Departments first, then re-import."
+            )
+            continue
+
+        dup_key = _budget_code_dup_key(code, output_description)
+        if dup_key and dup_key in existing_budget_code_keys:
+            skipped += 1
+            errors.append(f"Activity output #{i}: skipped — {_budget_code_dup_message(dup_key)}")
+            continue
+
+        baseline_value, baseline_note = _num_with_note(entry.get("baseline_value"))
+        planned_target, target_note = _num_with_note(entry.get("planned_target"))
+
+        bc = BudgetCode(
+            work_plan_id=work_plan_id,
+            department_id=dept.id,
+            service_area=_text(entry.get("service_area")),
+            code=code or "",
+            output_description=output_description or "",
+            programme=_text(entry.get("programme")),
+            sub_programme=_text(entry.get("sub_programme")),
+            piap_output_description=_text(entry.get("piap_output_description")),
+            piap_output_indicator=_text(entry.get("piap_output_indicator")),
+            unit_of_measure=_text(entry.get("unit_of_measure")),
+            baseline_value=baseline_value,
+            baseline_note=baseline_note,
+            planned_target=planned_target,
+            target_note=target_note,
+            actual_output=_text(entry.get("actual_output")),
+            q1_amount=_num(entry.get("q1_amount"), "q1_amount", row_warnings),
+            q2_amount=_num(entry.get("q2_amount"), "q2_amount", row_warnings),
+            q3_amount=_num(entry.get("q3_amount"), "q3_amount", row_warnings),
+            q4_amount=_num(entry.get("q4_amount"), "q4_amount", row_warnings),
+            funding_source=_text(entry.get("funding_source")) or "Local Revenue",
+            responsible_party=_text(entry.get("responsible_party")),
+        )
+        db.add(bc)
+        created += 1
+        if dup_key:
+            existing_budget_code_keys.add(dup_key)
+        errors.extend([f"Activity output #{i}: {w}" for w in row_warnings])
+
+    db.commit()
+    log_action(
+        db, admin.id, "budget_code.import_piap",
+        f"Imported {created} row(s) into work plan #{work_plan_id} from {file.filename} "
+        f"({skipped} skipped) using the PIAP/Part 2 layout"
+    )
+    _invalidate_budget_code_caches()
+    return BudgetCodeImportResult(created=created, skipped=skipped, departments_created=0,
+                                   errors=errors[:30], total_warnings=len(errors))
+
+
 # ---------------------------- Activities ------------------------------------
 
 @app.get("/api/activities", response_model=List[ActivityOut])
