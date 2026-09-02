@@ -2666,9 +2666,9 @@ def _bulk_committed_amounts(db: Session, budget_code_ids: List[int]) -> dict:
 
 @app.get("/api/budget-codes", response_model=List[BudgetCodeOut])
 def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optional[int] = None,
-                       search: Optional[str] = None,
+                       search: Optional[str] = None, programme: Optional[str] = None,
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    cache_key = f"budget_codes:{work_plan_id}:{department_id}:{(search or '').strip().lower()}"
+    cache_key = f"budget_codes:{work_plan_id}:{department_id}:{(search or '').strip().lower()}:{(programme or '').strip().lower()}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -2688,6 +2688,8 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
         q = q.filter(BudgetCode.work_plan_id == work_plan_id)
     if department_id:
         q = q.filter(BudgetCode.department_id == department_id)
+    if programme:
+        q = q.filter(BudgetCode.programme == programme)
     if search:
         like = f"%{search}%"
         q = q.filter(BudgetCode.output_description.ilike(like) | BudgetCode.code.ilike(like))
@@ -2701,6 +2703,20 @@ def list_budget_codes(work_plan_id: Optional[int] = None, department_id: Optiona
 
     _cache_set(cache_key, result)
     return result
+
+
+@app.get("/api/budget-codes/programmes", response_model=List[str])
+def list_budget_code_programmes(work_plan_id: Optional[int] = None, db: Session = Depends(get_db),
+                                 user: User = Depends(get_current_user)):
+    """Distinct, non-empty Programme values for the Programme filter dropdown
+    on the Annual Work Plan & Budget page, optionally scoped to one work
+    plan. Programme is free text on each budget code (not a lookup table),
+    so this just reads the distinct values already in use."""
+    q = db.query(BudgetCode.programme).distinct()
+    if work_plan_id:
+        q = q.filter(BudgetCode.work_plan_id == work_plan_id)
+    values = sorted({p.strip() for (p,) in q.all() if p and p.strip()}, key=str.lower)
+    return values
 
 
 _BUDGET_CODE_NUMERIC_FIELDS = ("baseline_value", "planned_target", "q1_amount", "q2_amount", "q3_amount", "q4_amount")
