@@ -33,7 +33,10 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+from reportlab.platypus import (
+    SimpleDocTemplate, BaseDocTemplate, PageTemplate, Frame, NextPageTemplate,
+    Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage,
+)
 
 logger = logging.getLogger("ktc_ipfms")
 logging.basicConfig(level=logging.INFO)
@@ -89,12 +92,19 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 ROLES = [
-    "admin",       # System Administrator
-    "staff",       # Staff Member
-    "hod",         # Head of Department
-    "treasurer",   # Senior Treasurer
-    "clerk",       # Town Clerk
-    "auditor",     # Internal Auditor
+    "admin",                        # LLG System Administrator
+    "staff",                        # LLG Requisitioner
+    "cashier",                      # LLG Paying Officer (Cashier)
+    "hod",                          # LLG First Level Approver (HOD)
+    "treasurer",                    # LLG Budget Controller (Senior Treasurer)
+    "clerk",                        # LLG Accounting Officer (Town Clerk)
+    "auditor",                      # LLG Internal Auditor (Senior Internal Auditor)
+    "district_internal_auditor",    # LLG IFMS/PBS District Internal Auditor
+    "district_external_auditor",    # LLG IFMS/PBS District External Auditor
+    "district_planner",             # District Planner
+    "cfo",                          # Chief Finance Officer (CFO)
+    "cao",                          # Chief Administrative Officer (CAO)
+    "national_admin",               # National System Administrator
 ]
 
 # --------------------------------------------------------------------------
@@ -619,7 +629,9 @@ class Document(Base):
     requisition_id = Column(Integer, ForeignKey("requisitions.id"), nullable=False)
     filename = Column(String(255), nullable=False)
     stored_path = Column(String(500), nullable=False)
-    doc_type = Column(String(50), default="cheque")  # cheque / receipt / photos / attendance / payment_sheet / acknowledgement / expense_report / report
+    doc_type = Column(String(50), default="cheque")  # cheque / receipt / photos / attendance / payment_sheet / acknowledgement / expense_report / report /
+                                                       # activity_implementation_report / goods_received_note / stores_issue_voucher / bill_of_quantities /
+                                                       # activity_launch_report / project_closeout_report / commissioning_report
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -4620,7 +4632,28 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     list of RevenueLineItemOut rows needed for that page.
     """
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=28, bottomMargin=28, leftMargin=28, rightMargin=28)
+    margin = 28
+    # For the "annual" page (PBS sub item 3 — Approved LG Annual Work Plan
+    # and Budget Estimates) the cover/Forward/Town Clerk/Executive Summary
+    # front matter is narrative text, not a wide table, so those pages are
+    # built in portrait A4. Everything from the first page-specific table
+    # onward still needs the extra width, so it switches to landscape A4.
+    # Other pages ("rev-monthly" / "expenditure") are unaffected and keep
+    # the previous all-landscape layout.
+    use_portrait_front_matter = page == "annual"
+    if use_portrait_front_matter:
+        portrait_frame = Frame(margin, margin, A4[0] - 2 * margin, A4[1] - 2 * margin, id="portrait")
+        landscape_size = landscape(A4)
+        landscape_frame = Frame(margin, margin, landscape_size[0] - 2 * margin, landscape_size[1] - 2 * margin, id="landscape")
+        doc = BaseDocTemplate(
+            buf, pagesize=A4, topMargin=margin, bottomMargin=margin, leftMargin=margin, rightMargin=margin,
+            pageTemplates=[
+                PageTemplate(id="Portrait", frames=[portrait_frame], pagesize=A4),
+                PageTemplate(id="Landscape", frames=[landscape_frame], pagesize=landscape_size),
+            ],
+        )
+    else:
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=margin, bottomMargin=margin, leftMargin=margin, rightMargin=margin)
 
     letterhead = _pdf_letterhead_image()
     story = [Spacer(1, 90)]
@@ -4654,6 +4687,10 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     story.append(PageBreak())
     story.append(Paragraph("EXECUTIVE SUMMARY", _pdf_h1))
     story += _pdf_exec_summary_flowables()
+    if use_portrait_front_matter:
+        # Everything from here on is a wide table — switch to the landscape
+        # page template starting on the next page.
+        story.append(NextPageTemplate("Landscape"))
     story.append(PageBreak())
 
     # ---- Page-specific content: mirrors exactly what's shown on screen ----
