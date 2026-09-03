@@ -2770,20 +2770,30 @@ def create_budget_code(payload: BudgetCodeIn, db: Session = Depends(get_db), adm
 
 
 @app.delete("/api/budget-codes/clear", response_model=BudgetCodeClearResult)
-def clear_budget_codes(work_plan_id: int, db: Session = Depends(get_db),
+def clear_budget_codes(work_plan_id: int, department_id: Optional[int] = None, db: Session = Depends(get_db),
                         admin: User = Depends(require_roles("admin"))):
-    """Delete every Activity & Budget Estimate row for a given work plan in
-    one go — powers the "Clear" button on the Annual Work Plan table so an
-    administrator can wipe the table clean before re-entering or
-    re-importing data. Rows that already have requisitions raised against
-    them are left in place (same protection as the single-row delete
-    endpoint) and reported back as skipped rather than blocking the whole
-    operation."""
+    """Delete Activity & Budget Estimate rows for a given work plan — powers
+    the "Clear" button on the Annual Work Plan table so an administrator can
+    wipe the table clean before re-entering or re-importing data. When
+    department_id is supplied, only rows belonging to that department are
+    deleted (the department the admin has selected in the Departments
+    dropdown); all other departments' rows are left untouched. When
+    department_id is omitted, every row for the work plan is deleted, as
+    before. Rows that already have requisitions raised against them are
+    left in place (same protection as the single-row delete endpoint) and
+    reported back as skipped rather than blocking the whole operation."""
     wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
     if not wp:
         raise HTTPException(status_code=400, detail="Selected work plan does not exist")
 
-    codes = db.query(BudgetCode).filter(BudgetCode.work_plan_id == work_plan_id).all()
+    query = db.query(BudgetCode).filter(BudgetCode.work_plan_id == work_plan_id)
+    if department_id is not None:
+        dept = db.query(Department).filter(Department.id == department_id).first()
+        if not dept:
+            raise HTTPException(status_code=400, detail="Selected department does not exist")
+        query = query.filter(BudgetCode.department_id == department_id)
+
+    codes = query.all()
     deleted = 0
     skipped = 0
     for bc in codes:
@@ -2795,8 +2805,9 @@ def clear_budget_codes(work_plan_id: int, db: Session = Depends(get_db),
         deleted += 1
 
     db.commit()
+    scope = f"department #{department_id}" if department_id is not None else "all departments"
     log_action(db, admin.id, "budget_code.clear_all",
-               f"Cleared {deleted} budget estimate row(s) from work plan #{work_plan_id} ({skipped} skipped — have requisitions on record)")
+               f"Cleared {deleted} budget estimate row(s) from work plan #{work_plan_id} ({scope}) ({skipped} skipped — have requisitions on record)")
     _invalidate_budget_code_caches()
     return BudgetCodeClearResult(deleted=deleted, skipped=skipped)
 
