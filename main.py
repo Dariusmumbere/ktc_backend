@@ -100,7 +100,7 @@ ROLES = [
     "clerk",                        # LLG Accounting Officer (Town Clerk)
     "auditor",                      # LLG Internal Auditor (Senior Internal Auditor)
     "district_internal_auditor",    # LLG IFMS/PBS District Internal Auditor
-    "district_external_auditor",    # LLG IFMS/PBS District External Auditor
+    "district_external_auditor",    # LLG IFMS/PBS External Auditor
     "district_planner",             # District Planner
     "cfo",                          # Chief Finance Officer (CFO)
     "cao",                          # Chief Administrative Officer (CAO)
