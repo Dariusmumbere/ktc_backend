@@ -107,6 +107,10 @@ ROLES = [
     "national_admin",               # National System Administrator
 ]
 
+# Fixed set of options for BudgetCode.expenditure_category — shown as a
+# dropdown (not free text) on the Budget Estimates Data Entry Form.
+EXPENDITURE_CATEGORIES = ["Wage", "Non wage", "Development"]
+
 # --------------------------------------------------------------------------
 # Lightweight in-memory response cache
 # --------------------------------------------------------------------------
@@ -408,6 +412,11 @@ class BudgetCode(Base):
     q3_amount = Column(Float, default=0)
     q4_amount = Column(Float, default=0)
     funding_source = Column(String(255), default="Local Revenue")  # Revenue Source
+    # Classifies the budget output's spending against the standard PBS
+    # expenditure categories. Constrained to one of three fixed values
+    # (see EXPENDITURE_CATEGORIES) and surfaced in the UI as a dropdown
+    # rather than free text.
+    expenditure_category = Column(String(20), default="Wage")
     # Often a multi-line list of several named officers/committees in
     # practice (e.g. "Town Mayor, Town Clerk, LCII Chairpersons, Ward
     # Development Committees, Clerk to Council") — Text avoids truncation.
@@ -673,6 +682,9 @@ def _run_lightweight_migrations():
         "ALTER TABLE budget_codes ADD COLUMN piap_output_indicator VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN actual_output VARCHAR(255)",
         "ALTER TABLE budget_codes ADD COLUMN responsible_party VARCHAR(150)",
+        # New Expenditure Category column (Wage / Non wage / Development),
+        # placed between Funding Source and Responsible Party.
+        "ALTER TABLE budget_codes ADD COLUMN expenditure_category VARCHAR(20) DEFAULT 'Wage'",
         # Preserves the full original Baseline Value / Planned Target text
         # for rows where it's narrative or multi-part (e.g. "25% of
         # Council area mapped for vectors") rather than a clean number —
@@ -905,6 +917,7 @@ class BudgetCodeIn(BaseModel):
     q3_amount: Union[float, int, str] = 0
     q4_amount: Union[float, int, str] = 0
     funding_source: str = "Local Revenue"
+    expenditure_category: str = "Wage"
     responsible_party: Optional[str] = None
 
 
@@ -927,6 +940,7 @@ class BudgetCodeUpdate(BaseModel):
     q3_amount: Optional[Union[float, int, str]] = None
     q4_amount: Optional[Union[float, int, str]] = None
     funding_source: Optional[str] = None
+    expenditure_category: Optional[str] = None
     responsible_party: Optional[str] = None
 
 
@@ -959,6 +973,7 @@ class BudgetCodeOut(BaseModel):
     q3_amount: float
     q4_amount: float
     funding_source: str
+    expenditure_category: Optional[str] = None
     responsible_party: Optional[str] = None
     allocated_amount: float
     committed_amount: float
@@ -2651,6 +2666,7 @@ def budget_code_to_out(bc: BudgetCode, committed_override: Optional[float] = Non
         q1_amount=parse_amount(bc.q1_amount), q2_amount=parse_amount(bc.q2_amount),
         q3_amount=parse_amount(bc.q3_amount), q4_amount=parse_amount(bc.q4_amount),
         funding_source=bc.funding_source,
+        expenditure_category=bc.expenditure_category,
         responsible_party=bc.responsible_party,
         allocated_amount=allocated, committed_amount=committed,
         available_balance=allocated - committed,
@@ -2875,6 +2891,7 @@ _IMPORT_COLUMN_ALIASES = {
     "total budget": "_total_budget_ignored",
     "funding source": "funding_source",
     "revenue source": "funding_source",
+    "expenditure category": "expenditure_category",
     "responsible party": "responsible_party",
 }
 
@@ -3242,6 +3259,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
             q3_amount=_num(data.get("q3_amount"), "q3_amount", row_idx, row_warnings),
             q4_amount=_num(data.get("q4_amount"), "q4_amount", row_idx, row_warnings),
             funding_source=_text(data.get("funding_source")) or "Local Revenue",
+            expenditure_category=_text(data.get("expenditure_category")) or "Wage",
             responsible_party=_text(data.get("responsible_party")),
         )
         db.add(bc)
@@ -3294,6 +3312,7 @@ _PIAP_FIELD_ALIASES = {
     "annual budget (ugx)": "_annual_budget_ignored",
     "annual budget": "_annual_budget_ignored",
     "funding source": "funding_source",
+    "expenditure category": "expenditure_category",
     "responsible party": "responsible_party",
 }
 
@@ -3504,6 +3523,7 @@ async def import_budget_codes_piap(work_plan_id: int, file: UploadFile = File(..
             q3_amount=_num(entry.get("q3_amount"), "q3_amount", row_warnings),
             q4_amount=_num(entry.get("q4_amount"), "q4_amount", row_warnings),
             funding_source=_text(entry.get("funding_source")) or "Local Revenue",
+            expenditure_category=_text(entry.get("expenditure_category")) or "Wage",
             responsible_party=_text(entry.get("responsible_party")),
         )
         db.add(bc)
@@ -4518,7 +4538,8 @@ def _pdf_workplan_table(codes, committed_map):
     """The full 'Annual Workplan for the FY' budget-code table — every column
     shown in the in-app table, one row per budget code."""
     header = ["Dept", "Service Area", "Programme", "Sub Programme", "Code", "Output Description", "PIAP Description",
-               "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source", "Responsible Party"]
+               "PIAP Indicator", "Unit", "Baseline", "Target", "Actual", "Q1", "Q2", "Q3", "Q4", "Total", "Funding Source",
+               "Expenditure Category", "Responsible Party"]
     # Which columns hold numbers, right-aligned for readability (money/counts
     # read better right-aligned than left-aligned).
     numeric_cols = {12, 13, 14, 15, 16}
@@ -4536,17 +4557,17 @@ def _pdf_workplan_table(codes, committed_map):
             c.code, c.output_description or "", c.piap_output_description or "", c.piap_output_indicator or "",
             c.unit_of_measure or "", baseline_display, target_display, c.actual_output or "",
             _pdf_money(c.q1_amount), _pdf_money(c.q2_amount), _pdf_money(c.q3_amount), _pdf_money(c.q4_amount),
-            _pdf_money(c.allocated_amount), c.funding_source or "", c.responsible_party or "",
+            _pdf_money(c.allocated_amount), c.funding_source or "", c.expenditure_category or "", c.responsible_party or "",
         ]
         data.append([Paragraph(str(v), _pdf_cell_r if i in numeric_cols else _pdf_cell) for i, v in enumerate(row)])
 
-    # 19 columns on a landscape A4 page (doc margins 28pt each side) leave
-    # ~786pt of usable width. These widths sum to ~764pt, so the table fits
+    # 20 columns on a landscape A4 page (doc margins 28pt each side) leave
+    # ~786pt of usable width. These widths sum to ~786pt, so the table fits
     # inside that frame with room to spare — a table wider than the frame is
     # what was causing columns to bleed into each other. Every cell is still
     # a Paragraph, so any text too long for its column wraps onto a new line
     # inside that cell instead of spilling into the next one.
-    col_widths = [40, 38, 38, 38, 30, 62, 54, 54, 26, 24, 24, 28, 44, 44, 44, 44, 48, 38, 42]
+    col_widths = [40, 35, 35, 34, 30, 62, 54, 54, 26, 24, 24, 28, 44, 44, 44, 44, 48, 38, 36, 42]
     t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1))
     return t
