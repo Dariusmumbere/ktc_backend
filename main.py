@@ -499,29 +499,35 @@ class RevenueSourceItem(Base):
 
 
 class RevenueLineItem(Base):
-    """A single row on one of the three Programme-Based Budgeting System
-    (PBS) revenue performance pages:
-      - "monthly"   → Approved Monthly Revenue Budget Estimates and Actual
-                       LG Revenue & Transfers Realized (12 monthly periods)
-      - "quarterly" → Approved Quarterly Revenue Budget Estimates and
-                       Quarterly Revenue Performance Gap (4 quarterly periods)
-      - "summary"   → Summary of the LG Annual and Quarterly Revenue
-                       Performance (4 quarterly periods, one row per
-                       top-level revenue category)
+    """A single row on one of four Programme-Based Budgeting System (PBS)
+    revenue performance pages:
+      - "monthly"        → Approved Monthly Revenue Budget Estimates and
+                            Actual LG Revenue & Transfers Realized
+                            (12 monthly periods)
+      - "quarterly"      → Approved Quarterly Revenue Budget Estimates and
+                            Quarterly Revenue Performance Gap
+                            (4 quarterly periods)
+      - "rev_by_source"  → A1: Summary of the Revenue Performance Plan by
+                            Source (4 quarterly periods, one row per
+                            top-level revenue source)
+      - "rev_by_category"→ A2: Revenue Performance Plan by Category &
+                            Source (4 quarterly periods, one row per
+                            individual revenue category/source)
 
-    One table serves all three pages (discriminated by period_type) since
+    One table serves all four pages (discriminated by period_type) since
     they share an identical shape: a Chart-of-Accounts style hierarchy of
     category / sub-category / item / subtotal / grand-total rows, each
     carrying an Approved Budget Estimate and an Actual Realized amount per
     period, mirroring the Council's "ANNUAL Budget Framework" workbook.
-    The Performance Gap shown on the quarterly/summary pages is simply
-    Approved − Actual and is computed on read rather than stored (see
-    revenue_line_item_to_out below), so it can never drift out of sync.
+    The Performance Gap shown on the quarterly/rev_by_source/rev_by_category
+    pages is simply Approved − Actual and is computed on read rather than
+    stored (see revenue_line_item_to_out below), so it can never drift out
+    of sync.
     """
     __tablename__ = "revenue_line_items"
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
-    period_type = Column(String(20), nullable=False)  # monthly | quarterly | summary
+    period_type = Column(String(20), nullable=False)  # monthly | quarterly | rev_by_source | rev_by_category
     sort_order = Column(Integer, default=0, nullable=False)
     code = Column(String(30))
     label = Column(Text, nullable=False)
@@ -531,7 +537,7 @@ class RevenueLineItem(Base):
     row_type = Column(String(20), default="item", nullable=False)
     indent = Column(Integer, default=0)
     # JSON-encoded list of floats — length 12 for "monthly", 4 for
-    # "quarterly"/"summary". Stored as Text (not the SQLAlchemy JSON type)
+    # "quarterly"/"rev_by_source"/"rev_by_category". Stored as Text (not the SQLAlchemy JSON type)
     # so this works identically on SQLite and Postgres without relying on
     # dialect-specific JSON support.
     approved_periods = Column(Text)
@@ -1067,8 +1073,8 @@ class RevenueSourceClearResult(BaseModel):
     deleted: int
 
 
-PERIOD_TYPES = ("monthly", "quarterly", "summary")
-_PERIOD_COUNTS = {"monthly": 12, "quarterly": 4, "summary": 4}
+PERIOD_TYPES = ("monthly", "quarterly", "rev_by_source", "rev_by_category")
+_PERIOD_COUNTS = {"monthly": 12, "quarterly": 4, "rev_by_source": 4, "rev_by_category": 4}
 
 
 class RevenueLineItemIn(BaseModel):
@@ -2238,12 +2244,14 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 # ------------------------ PBS Revenue Performance Pages ---------------------
 # Backs the three Programme-Based Budgeting System (PBS) revenue pages:
 #   1. Approved Monthly Revenue Budget Estimates and Actual LG Revenue &
-#      Transfers Realized      (period_type="monthly",   12 periods)
+#      Transfers Realized      (period_type="monthly",         12 periods)
 #   2. Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
-#      Performance Gap          (period_type="quarterly", 4 periods)
-#   3. Summary of the LG Annual and Quarterly Revenue Performance
-#      (period_type="summary",  4 periods)
-# All three share the RevenueLineItem model/table (see model definition
+#      Performance Gap          (period_type="quarterly",       4 periods)
+#   3. A1: Summary of the Revenue Performance Plan by Source
+#      (period_type="rev_by_source",   4 periods)
+#   4. A2: Revenue Performance Plan by Category & Source
+#      (period_type="rev_by_category", 4 periods)
+# All four share the RevenueLineItem model/table (see model definition
 # above) and this one set of CRUD + Excel-import endpoints.
 
 _PBS_SUBTOTAL_RE = re.compile(r"^sub[\s\-]?total", re.I)
@@ -2355,7 +2363,7 @@ def _parse_monthly_revenue_sheet(ws) -> List[dict]:
 
 
 def _parse_quarterly_style_sheet(ws) -> List[dict]:
-    """Shared by the "quarterly" and "summary" pages, which use an
+    """Shared by the "quarterly", "rev_by_source" and "rev_by_category" pages, which use an
     identical column layout: A=Code, B=Fund Category and Source of
     Financing, C:F (idx 2-5)=Q1-Q4 Approved, G (idx 6)=Annual Approved,
     H:K (idx 7-10)=Q1-Q4 Actual, L (idx 11)=Annual Actual. Any Gap columns
@@ -2404,7 +2412,7 @@ def list_revenue_line_items(work_plan_id: Optional[int] = None, period_type: Opt
 def create_revenue_line_item(payload: RevenueLineItemIn, db: Session = Depends(get_db),
                               admin: User = Depends(require_roles("admin"))):
     if payload.period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
     wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
     if not wp:
         raise HTTPException(status_code=400, detail="Selected work plan does not exist")
@@ -2486,7 +2494,7 @@ def update_revenue_line_item(item_id: int, payload: RevenueLineItemUpdate, db: S
 def clear_revenue_line_items(work_plan_id: int, period_type: str, db: Session = Depends(get_db),
                               admin: User = Depends(require_roles("admin"))):
     if period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
     rows = db.query(RevenueLineItem).filter(
         RevenueLineItem.work_plan_id == work_plan_id,
         RevenueLineItem.period_type == period_type,
@@ -2517,20 +2525,25 @@ def delete_revenue_line_item(item_id: int, db: Session = Depends(get_db),
 async def import_revenue_line_items(work_plan_id: int, period_type: str, file: UploadFile = File(...),
                                      db: Session = Depends(get_db),
                                      admin: User = Depends(require_roles("admin"))):
-    """Imports one of the three PBS revenue sheets ("Monthly Revenue
-    Projections", "Quarterly Revenue Projections" or "Summary") from the
-    Council's Annual Budget Framework workbook. Importing REPLACES every
-    existing row for this work plan + period_type — the workbook is the
-    master copy of the whole table, not a set of rows to merge in.
+    """Imports one of the four PBS revenue sheets ("Monthly Revenue
+    Projections", "Quarterly Revenue Projections", "A1: Summary of the
+    Revenue Performance Plan by Source" or "A2: Revenue Performance Plan by
+    Category & Source") from the Council's Annual Budget Framework workbook.
+    Importing REPLACES every existing row for this work plan + period_type —
+    the workbook is the master copy of the whole table, not a set of rows to
+    merge in.
 
     If the uploaded workbook has multiple sheets (as the combined "ANNUAL
     Budget Framework" file does), the sheet whose name best matches the
     requested period_type is used automatically, so the same workbook can
-    be dropped onto any of the three Import buttons without the user
-    needing to pick the right tab themselves.
+    be dropped onto any of the four Import buttons without the user needing
+    to pick the right tab themselves. For "rev_by_source"/"rev_by_category"
+    this also matches a sheet literally named "Summary" (the Council's
+    workbook keeps both A1 and A2 on one sheet named "Summary"), falling
+    back to the first sheet if nothing matches.
     """
     if period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, summary")
+        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
 
     try:
         import openpyxl
@@ -2554,10 +2567,16 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read the Excel file: {e}")
 
-    hint = period_type  # "monthly" / "quarterly" / "summary" all appear literally in this workbook's sheet names
+    # "monthly" / "quarterly" appear literally in this workbook's sheet
+    # names; "rev_by_source" and "rev_by_category" don't (the Council's
+    # combined workbook keeps both A1 and A2 on one sheet named "Summary"),
+    # so those two additionally match a sheet literally named "Summary".
+    hints = [period_type]
+    if period_type in ("rev_by_source", "rev_by_category"):
+        hints.append("summary")
     ws = None
     for name in wb.sheetnames:
-        if hint in name.lower():
+        if any(h in name.lower() for h in hints):
             ws = wb[name]
             break
     if ws is None:
@@ -4585,26 +4604,27 @@ def _pdf_workplan_table(codes, committed_map):
 
 
 # ---------------------------------------------------------------------------
-# PBS Revenue Performance table (monthly / quarterly / summary) — mirrors the
-# frontend's renderRevLineTable()/REV_LINE_PAGES so the PDF shows exactly the
-# same table that's on screen for whichever PBS page the download was
-# triggered from.
+# PBS Revenue Performance table (monthly / quarterly / rev_by_source /
+# rev_by_category) — mirrors the frontend's renderRevLineTable()/
+# REV_LINE_PAGES so the PDF shows exactly the same table that's on screen
+# for whichever PBS page the download was triggered from.
 # ---------------------------------------------------------------------------
 REV_LINE_PDF_PERIOD_LABELS = {
     "monthly": ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
     "quarterly": ["Q1", "Q2", "Q3", "Q4"],
-    "summary": ["Q1", "Q2", "Q3", "Q4"],
+    "rev_by_source": ["Q1", "Q2", "Q3", "Q4"],
+    "rev_by_category": ["Q1", "Q2", "Q3", "Q4"],
 }
-REV_LINE_PDF_HAS_GAP = {"monthly": False, "quarterly": True, "summary": True}
+REV_LINE_PDF_HAS_GAP = {"monthly": False, "quarterly": True, "rev_by_source": True, "rev_by_category": True}
 
 
 def _pdf_rev_line_table(rows: list, period_type: str):
     """Mirrors the frontend's renderRevLineTable(): Code, Fund Category and
     Source of Financing, per-period Approved, Annual Approved, per-period
-    Actual, Annual Actual, and — for quarterly/summary only — per-period
-    Performance Gap + Annual Gap. Category rows are left blank in the figure
-    columns (matching the on-screen table), and category/subtotal/grand-total
-    rows are rendered bold."""
+    Actual, Annual Actual, and — for quarterly/rev_by_source/rev_by_category
+    only — per-period Performance Gap + Annual Gap. Category rows are left
+    blank in the figure columns (matching the on-screen table), and
+    category/subtotal/grand-total rows are rendered bold."""
     period_labels = REV_LINE_PDF_PERIOD_LABELS[period_type]
     has_gap = REV_LINE_PDF_HAS_GAP[period_type]
 
@@ -4656,12 +4676,16 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
       - "expenditure": Department Budget Summary + the Annual Work Plan and
         Expenditure Estimates table (no revenue tables — this page hides
         them, see applyWorkplanSubtabDisplay() in the frontend).
-      - "annual" (default): Summary of the LG Annual and Quarterly Revenue
-        Estimates + Department Budget Summary + Approved Quarterly Revenue
-        Budget Estimates and Quarterly Revenue Performance Gap + the Annual
-        Work Plan and Budget Estimates table.
-    `revline_data` maps period_type ("monthly"/"quarterly"/"summary") to the
-    list of RevenueLineItemOut rows needed for that page.
+      - "annual" (default): A1: Summary of the Revenue Performance Plan by
+        Source + A2: Revenue Performance Plan by Category & Source +
+        Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
+        Performance Gap + the Annual Work Plan and Budget Estimates table.
+        (The Department Budget Summary that used to appear on this page has
+        been replaced by the two PBS revenue tables above; it still appears
+        on the "expenditure" page.)
+    `revline_data` maps period_type ("monthly"/"quarterly"/"rev_by_source"/
+    "rev_by_category") to the list of RevenueLineItemOut rows needed for
+    that page.
     """
     buf = io.BytesIO()
     margin = 28
@@ -4736,12 +4760,12 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
         story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
         story.append(_pdf_workplan_table(codes, committed_map))
     else:  # "annual"
-        story.append(Paragraph("SUMMARY OF THE LG ANNUAL AND QUARTERLY REVENUE ESTIMATES", _pdf_h2))
-        story.append(_pdf_rev_line_table(revline_data.get("summary", []), "summary"))
+        story.append(Paragraph("A1: SUMMARY OF THE REVENUE PERFORMANCE PLAN BY SOURCE", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("rev_by_source", []), "rev_by_source"))
         story.append(PageBreak())
-        story.append(Paragraph("Department Budget Summary", _pdf_h2))
-        story.append(_pdf_dept_summary_table(codes, committed_map))
-        story.append(Spacer(1, 16))
+        story.append(Paragraph("A2: REVENUE PERFORMANCE PLAN BY CATEGORY &amp; SOURCE", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("rev_by_category", []), "rev_by_category"))
+        story.append(PageBreak())
         story.append(Paragraph("APPROVED QUARTERLY REVENUE BUDGET ESTIMATES AND QUARTERLY REVENUE PERFORMANCE GAP", _pdf_h2))
         story.append(_pdf_rev_line_table(revline_data.get("quarterly", []), "quarterly"))
         story.append(PageBreak())
@@ -4754,7 +4778,7 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
 
 
 _REPORT_PDF_PAGES = ("rev-monthly", "expenditure", "annual")
-_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["summary", "quarterly"]}
+_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["rev_by_source", "rev_by_category", "quarterly"]}
 
 
 @app.get("/api/work-plans/{wp_id}/report-pdf")
