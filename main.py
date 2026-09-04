@@ -29,13 +29,12 @@ import boto3
 from botocore.exceptions import ClientError
 
 # PDF report generation (pip install reportlab)
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
 from reportlab.platypus import (
-    SimpleDocTemplate, BaseDocTemplate, PageTemplate, Frame, NextPageTemplate,
-    Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage,
 )
 
 logger = logging.getLogger("ktc_ipfms")
@@ -507,10 +506,10 @@ class RevenueLineItem(Base):
       - "quarterly"      → Approved Quarterly Revenue Budget Estimates and
                             Quarterly Revenue Performance Gap
                             (4 quarterly periods)
-      - "rev_by_source"  → A1: Summary of the Revenue Performance Plan by
+      - "rev_by_source"  → Summary of the Revenue Performance Plan by
                             Source (4 quarterly periods, one row per
                             top-level revenue source)
-      - "rev_by_category"→ A2: Revenue Performance Plan by Category &
+      - "rev_by_category"→ Revenue Performance Plan by Category &
                             Source (4 quarterly periods, one row per
                             individual revenue category/source)
 
@@ -2247,9 +2246,9 @@ async def import_revenue_sources(work_plan_id: int, file: UploadFile = File(...)
 #      Transfers Realized      (period_type="monthly",         12 periods)
 #   2. Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
 #      Performance Gap          (period_type="quarterly",       4 periods)
-#   3. A1: Summary of the Revenue Performance Plan by Source
+#   3. Summary of the Revenue Performance Plan by Source
 #      (period_type="rev_by_source",   4 periods)
-#   4. A2: Revenue Performance Plan by Category & Source
+#   4. Revenue Performance Plan by Category & Source
 #      (period_type="rev_by_category", 4 periods)
 # All four share the RevenueLineItem model/table (see model definition
 # above) and this one set of CRUD + Excel-import endpoints.
@@ -2526,8 +2525,8 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
                                      db: Session = Depends(get_db),
                                      admin: User = Depends(require_roles("admin"))):
     """Imports one of the four PBS revenue sheets ("Monthly Revenue
-    Projections", "Quarterly Revenue Projections", "A1: Summary of the
-    Revenue Performance Plan by Source" or "A2: Revenue Performance Plan by
+    Projections", "Quarterly Revenue Projections", "Summary of the
+    Revenue Performance Plan by Source" or "Revenue Performance Plan by
     Category & Source") from the Council's Annual Budget Framework workbook.
     Importing REPLACES every existing row for this work plan + period_type —
     the workbook is the master copy of the whole table, not a set of rows to
@@ -2539,7 +2538,7 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
     be dropped onto any of the four Import buttons without the user needing
     to pick the right tab themselves. For "rev_by_source"/"rev_by_category"
     this also matches a sheet literally named "Summary" (the Council's
-    workbook keeps both A1 and A2 on one sheet named "Summary"), falling
+    workbook keeps both tables on one sheet named "Summary"), falling
     back to the first sheet if nothing matches.
     """
     if period_type not in PERIOD_TYPES:
@@ -2569,7 +2568,7 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
 
     # "monthly" / "quarterly" appear literally in this workbook's sheet
     # names; "rev_by_source" and "rev_by_category" don't (the Council's
-    # combined workbook keeps both A1 and A2 on one sheet named "Summary"),
+    # combined workbook keeps both tables on one sheet named "Summary"),
     # so those two additionally match a sheet literally named "Summary".
     hints = [period_type]
     if period_type in ("rev_by_source", "rev_by_category"):
@@ -4407,7 +4406,11 @@ def _pdf_dept_summary_table(codes, committed_map):
         *[Paragraph(x, _pdf_cell_rb) for x in footer_vals[1:]],
     ])
 
-    t = Table(data, colWidths=[182, 65, 65, 65, 65, 80, 88], repeatRows=1)
+    # Column widths sized for portrait A4 (doc margins 28pt each side leave
+    # ~535pt of usable width) — the whole Work Plan & Budget report is
+    # generated in strict portrait A4, never landscape (see
+    # build_workplan_report_pdf).
+    t = Table(data, colWidths=[160, 57, 57, 57, 57, 70, 77], repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1, footer_rows=1))
     return t
 
@@ -4591,13 +4594,14 @@ def _pdf_workplan_table(codes, committed_map):
         ]
         data.append([Paragraph(str(v), _pdf_cell_r if i in numeric_cols else _pdf_cell) for i, v in enumerate(row)])
 
-    # 20 columns on a landscape A4 page (doc margins 28pt each side) leave
-    # ~786pt of usable width. These widths sum to ~786pt, so the table fits
-    # inside that frame with room to spare — a table wider than the frame is
-    # what was causing columns to bleed into each other. Every cell is still
-    # a Paragraph, so any text too long for its column wraps onto a new line
-    # inside that cell instead of spilling into the next one.
-    col_widths = [40, 35, 35, 34, 30, 62, 54, 54, 26, 24, 24, 28, 44, 44, 44, 44, 48, 38, 36, 42]
+    # 20 columns on a portrait A4 page (doc margins 28pt each side) leave
+    # ~535pt of usable width — the whole report is built in strict portrait
+    # A4 (see build_workplan_report_pdf), never landscape, so these widths
+    # are scaled down from the old landscape layout to sum to ~535pt.
+    # Every cell is still a Paragraph, so any text too long for its column
+    # wraps onto a new (and, at this width, often multi-line) line inside
+    # that cell instead of spilling into the next one.
+    col_widths = [27, 24, 24, 23, 20, 41, 37, 37, 18, 16, 16, 19, 30, 30, 30, 30, 33, 26, 25, 29]
     t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(_pdf_table_style(header_rows=1))
     return t
@@ -4653,10 +4657,13 @@ def _pdf_rev_line_table(rows: list, period_type: str):
         data.append(row)
 
     period_count = len(period_labels)
+    # Widths sized for portrait A4 (doc margins 28pt each side leave ~535pt
+    # of usable width) — the whole report is built in strict portrait A4,
+    # never landscape (see build_workplan_report_pdf).
     if period_type == "monthly":
-        code_w, label_w, period_w, annual_w = 24, 68, 24, 34
+        code_w, label_w, period_w, annual_w = 17, 62, 17, 24
     else:
-        code_w, label_w, period_w, annual_w = 30, 130, 40, 45
+        code_w, label_w, period_w, annual_w = 20, 90, 28, 31
     col_widths = [code_w, label_w] + [period_w] * period_count + [annual_w] + [period_w] * period_count + [annual_w]
     if has_gap:
         col_widths += [period_w] * period_count + [annual_w]
@@ -4676,8 +4683,8 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
       - "expenditure": Department Budget Summary + the Annual Work Plan and
         Expenditure Estimates table (no revenue tables — this page hides
         them, see applyWorkplanSubtabDisplay() in the frontend).
-      - "annual" (default): A1: Summary of the Revenue Performance Plan by
-        Source + A2: Revenue Performance Plan by Category & Source +
+      - "annual" (default): Summary of the Revenue Performance Plan by
+        Source + Revenue Performance Plan by Category & Source +
         Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
         Performance Gap + the Annual Work Plan and Budget Estimates table.
         (The Department Budget Summary that used to appear on this page has
@@ -4686,30 +4693,18 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     `revline_data` maps period_type ("monthly"/"quarterly"/"rev_by_source"/
     "rev_by_category") to the list of RevenueLineItemOut rows needed for
     that page.
+
+    The whole report — every page, on every PBS sub item — is built in
+    strict portrait A4. Tables that used to need landscape width (the
+    29-column monthly table, the 17-column quarterly-style tables, and the
+    20-column workplan table) instead use narrower, portrait-sized column
+    widths (see _pdf_rev_line_table / _pdf_workplan_table /
+    _pdf_dept_summary_table), wrapping cell text onto extra lines rather
+    than widening the page.
     """
     buf = io.BytesIO()
     margin = 28
-    # For the "annual" page (PBS sub item 3 — Approved LG Annual Work Plan
-    # and Budget Estimates) the cover/Forward/Town Clerk/Executive Summary
-    # front matter is narrative text, not a wide table, so those pages are
-    # built in portrait A4. Everything from the first page-specific table
-    # onward still needs the extra width, so it switches to landscape A4.
-    # Other pages ("rev-monthly" / "expenditure") are unaffected and keep
-    # the previous all-landscape layout.
-    use_portrait_front_matter = page == "annual"
-    if use_portrait_front_matter:
-        portrait_frame = Frame(margin, margin, A4[0] - 2 * margin, A4[1] - 2 * margin, id="portrait")
-        landscape_size = landscape(A4)
-        landscape_frame = Frame(margin, margin, landscape_size[0] - 2 * margin, landscape_size[1] - 2 * margin, id="landscape")
-        doc = BaseDocTemplate(
-            buf, pagesize=A4, topMargin=margin, bottomMargin=margin, leftMargin=margin, rightMargin=margin,
-            pageTemplates=[
-                PageTemplate(id="Portrait", frames=[portrait_frame], pagesize=A4),
-                PageTemplate(id="Landscape", frames=[landscape_frame], pagesize=landscape_size),
-            ],
-        )
-    else:
-        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=margin, bottomMargin=margin, leftMargin=margin, rightMargin=margin)
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=margin, bottomMargin=margin, leftMargin=margin, rightMargin=margin)
 
     letterhead = _pdf_letterhead_image()
     story = [Spacer(1, 90)]
@@ -4743,10 +4738,6 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
     story.append(PageBreak())
     story.append(Paragraph("EXECUTIVE SUMMARY", _pdf_h1))
     story += _pdf_exec_summary_flowables()
-    if use_portrait_front_matter:
-        # Everything from here on is a wide table — switch to the landscape
-        # page template starting on the next page.
-        story.append(NextPageTemplate("Landscape"))
     story.append(PageBreak())
 
     # ---- Page-specific content: mirrors exactly what's shown on screen ----
@@ -4760,14 +4751,14 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
         story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND EXPENDITURE ESTIMATES FOR FY 2026/2027", _pdf_h2))
         story.append(_pdf_workplan_table(codes, committed_map))
     else:  # "annual"
-        story.append(Paragraph("A1: SUMMARY OF THE REVENUE PERFORMANCE PLAN BY SOURCE", _pdf_h2))
+        story.append(Paragraph("SUMMARY OF THE REVENUE PERFORMANCE PLAN BY SOURCE", _pdf_h2))
         story.append(_pdf_rev_line_table(revline_data.get("rev_by_source", []), "rev_by_source"))
         story.append(PageBreak())
-        story.append(Paragraph("A2: REVENUE PERFORMANCE PLAN BY CATEGORY &amp; SOURCE", _pdf_h2))
+        story.append(Paragraph("REVENUE PERFORMANCE PLAN BY CATEGORY &amp; SOURCE", _pdf_h2))
         story.append(_pdf_rev_line_table(revline_data.get("rev_by_category", []), "rev_by_category"))
         story.append(PageBreak())
-        story.append(Paragraph("APPROVED QUARTERLY REVENUE BUDGET ESTIMATES AND QUARTERLY REVENUE PERFORMANCE GAP", _pdf_h2))
-        story.append(_pdf_rev_line_table(revline_data.get("quarterly", []), "quarterly"))
+        story.append(Paragraph("MONTHLY LOCAL REVENUE/GOU TRANSFERS ESTIMATES VS. ACTUAL REALIZED", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("monthly", []), "monthly"))
         story.append(PageBreak())
         story.append(Paragraph("APPROVED COUNCIL ANNUAL WORK PLAN AND BUDGET ESTIMATES FOR FY 2026/2027", _pdf_h2))
         story.append(_pdf_workplan_table(codes, committed_map))
@@ -4778,7 +4769,7 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
 
 
 _REPORT_PDF_PAGES = ("rev-monthly", "expenditure", "annual")
-_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["rev_by_source", "rev_by_category", "quarterly"]}
+_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["rev_by_source", "rev_by_category", "monthly"]}
 
 
 @app.get("/api/work-plans/{wp_id}/report-pdf")
