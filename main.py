@@ -349,6 +349,14 @@ class WorkPlan(Base):
     title_dept_summary = Column(String(500), nullable=True)
     title_revenue_detail = Column(String(500), nullable=True)
     title_main_table = Column(String(500), nullable=True)
+    # Masthead values shown on the "Summary of the Revenue Performance Plan
+    # by Source" table (Lower Local Government Vote code, Lower Local
+    # Government name, Higher Local Government name) — editable in place via
+    # the "Edit row header" button above that table rather than fixed text,
+    # so each work plan can carry its own masthead without a code change.
+    llg_vote = Column(String(50), nullable=True)
+    lower_local_government = Column(String(200), nullable=True)
+    higher_local_government = Column(String(200), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -757,6 +765,13 @@ def _run_lightweight_migrations():
         # Departments page's Edit modal; _backfill_department_abbreviations()
         # below fills it in for departments that predate this column.
         "ALTER TABLE departments ADD COLUMN abbreviation VARCHAR(20)",
+        # Masthead values for the Revenue Performance Plan by Source table
+        # (Lower Local Government Vote code / Lower Local Government name /
+        # Higher Local Government name), editable per work plan via the
+        # "Edit row header" button rather than fixed in the page markup.
+        "ALTER TABLE work_plans ADD COLUMN llg_vote VARCHAR(50)",
+        "ALTER TABLE work_plans ADD COLUMN lower_local_government VARCHAR(200)",
+        "ALTER TABLE work_plans ADD COLUMN higher_local_government VARCHAR(200)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -881,6 +896,9 @@ class WorkPlanIn(BaseModel):
     title_dept_summary: Optional[str] = None
     title_revenue_detail: Optional[str] = None
     title_main_table: Optional[str] = None
+    llg_vote: Optional[str] = None
+    lower_local_government: Optional[str] = None
+    higher_local_government: Optional[str] = None
 
 
 class WorkPlanOut(WorkPlanIn):
@@ -1664,6 +1682,18 @@ def _default_table_titles(financial_year: str) -> dict:
     }
 
 
+# Fallback masthead values for the Revenue Performance Plan by Source table,
+# used whenever a work plan is created/updated without explicit text for one
+# of them — matches the values the page originally shipped with as fixed
+# text, so nothing appears blank for work plans that predate the "Edit row
+# header" feature.
+_DEFAULT_MASTHEAD = {
+    "llg_vote": "001",
+    "lower_local_government": "Karugutu Town Council",
+    "higher_local_government": "Ntoroko District",
+}
+
+
 @app.get("/api/workplans", response_model=List[WorkPlanOut])
 def list_workplans(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Ordered oldest -> newest (by creation order) so the older annual work
@@ -1677,6 +1707,9 @@ def create_workplan(payload: WorkPlanIn, db: Session = Depends(get_db), admin: U
     data = payload.dict()
     defaults = _default_table_titles(payload.financial_year)
     for field, default_text in defaults.items():
+        if not (data.get(field) or "").strip():
+            data[field] = default_text
+    for field, default_text in _DEFAULT_MASTHEAD.items():
         if not (data.get(field) or "").strip():
             data[field] = default_text
     wp = WorkPlan(**data)
@@ -1700,6 +1733,9 @@ def update_workplan(wp_id: int, payload: WorkPlanIn, db: Session = Depends(get_d
     wp.title_dept_summary = (payload.title_dept_summary or "").strip() or defaults["title_dept_summary"]
     wp.title_revenue_detail = (payload.title_revenue_detail or "").strip() or defaults["title_revenue_detail"]
     wp.title_main_table = (payload.title_main_table or "").strip() or defaults["title_main_table"]
+    wp.llg_vote = (payload.llg_vote or "").strip() or _DEFAULT_MASTHEAD["llg_vote"]
+    wp.lower_local_government = (payload.lower_local_government or "").strip() or _DEFAULT_MASTHEAD["lower_local_government"]
+    wp.higher_local_government = (payload.higher_local_government or "").strip() or _DEFAULT_MASTHEAD["higher_local_government"]
     db.commit()
     db.refresh(wp)
     log_action(db, admin.id, "workplan.update", f"{wp.title} ({wp.financial_year})")
