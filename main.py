@@ -106,6 +106,31 @@ ROLES = [
     "national_admin",               # National System Administrator
 ]
 
+# Default (key, label, sort_order) rows used to seed the `role_options`
+# table the very first time the app starts against a fresh database. This
+# mirrors the labels/order that used to be hard-coded directly into the
+# "Sign in as" <select> on the login page. Once seeded, the table — not
+# this list — is the source of truth; administrators can rename a role's
+# display label, hide it from the sign-in dropdown, or reorder it from the
+# Users & Roles screen without a code change. The set of valid role *keys*
+# (ROLES, above) is unaffected — this only controls what's shown/labelled
+# on the sign-in screen.
+DEFAULT_ROLE_OPTIONS = [
+    ("staff", "LLG Requisitioner"),
+    ("cashier", "LLG Paying Officer (Cashier)"),
+    ("hod", "LLG First Level Approver (HOD)"),
+    ("treasurer", "LLG Budget Controller (Senior Treasurer)"),
+    ("clerk", "LLG Accounting Officer (Town Clerk)"),
+    ("auditor", "HLG Internal Auditor (Senior Internal Auditor)"),
+    ("district_internal_auditor", "LLG IFMS/PBS District Internal Auditor"),
+    ("district_external_auditor", "LLG IFMS/PBS External Auditor (OAG)"),
+    ("district_planner", "District Planner"),
+    ("cfo", "Chief Finance Officer (CFO)"),
+    ("cao", "Chief Administrative Officer (CAO)"),
+    ("national_admin", "National System Administrator"),
+    ("admin", "LLG System Administrator"),
+]
+
 # Fixed set of options for BudgetCode.expenditure_category — shown as a
 # dropdown (not free text) on the Budget Estimates Data Entry Form.
 EXPENDITURE_CATEGORIES = ["Wage", "Non wage", "Development"]
@@ -685,6 +710,21 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
+class RoleOption(Base):
+    # Drives the "Sign in as" dropdown on the login page. Editable from the
+    # Users & Roles tab (Sign-in Role Options): an administrator can rename
+    # a role's display label, show/hide it from the login screen, or
+    # reorder it — without touching the underlying `role` values stored on
+    # User rows or any of the permission checks elsewhere in the app, which
+    # continue to key off `key` exactly as before (see ROLES above).
+    __tablename__ = "role_options"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(50), unique=True, nullable=False)
+    label = Column(String(150), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -897,6 +937,25 @@ class DepartmentOut(BaseModel):
     abbreviation: str
     class Config:
         from_attributes = True
+
+
+class RoleOptionOut(BaseModel):
+    id: int
+    key: str
+    label: str
+    is_active: bool
+    sort_order: int
+    class Config:
+        from_attributes = True
+
+
+class RoleOptionUpdate(BaseModel):
+    label: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class RoleOptionMoveIn(BaseModel):
+    direction: str  # "up" or "down"
 
 
 class WorkPlanIn(BaseModel):
@@ -1404,11 +1463,28 @@ def seed_data():
             except IntegrityError:
                 db.rollback()
                 logger.info("Admin user already existed (created concurrently); skipping seed insert.")
+
+        _seed_role_options(db)
     except Exception as exc:  # noqa: BLE001 - never let seeding crash startup
         db.rollback()
         logger.warning("Startup seeding skipped due to error: %s", exc)
     finally:
         db.close()
+
+
+def _seed_role_options(db: Session):
+    """Populate role_options from DEFAULT_ROLE_OPTIONS the first time the
+    app runs, and add a row for any role key that doesn't have one yet
+    (e.g. a new ROLES entry introduced after this table was first seeded).
+    Never touches rows an administrator has already customised."""
+    existing_keys = {r.key for r in db.query(RoleOption).all()}
+    added = False
+    for idx, (key, label) in enumerate(DEFAULT_ROLE_OPTIONS):
+        if key not in existing_keys:
+            db.add(RoleOption(key=key, label=label, is_active=True, sort_order=idx))
+            added = True
+    if added:
+        db.commit()
 
 
 # ---------------------------- Auth ----------------------------------------
@@ -1677,6 +1753,82 @@ def delete_department(dep_id: int, db: Session = Depends(get_db), admin: User = 
     log_action(db, admin.id, "department.delete", dep.name)
     _invalidate_budget_code_caches()
     return {"ok": True}
+
+
+# ---------------------------- Role Options (sign-in dropdown) --------------
+# These endpoints power the Users & Roles tab's "Sign-in Role Options"
+# panel, which lets an administrator control what appears in the "Sign in
+# as" dropdown on the login page: each role's display label, whether it's
+# shown at all, and the order the options appear in. The list of valid
+# role *keys* a user account can actually hold (ROLES, defined near the
+# top of this file) is not editable here and is untouched by any of this.
+
+@app.get("/api/roles", response_model=List[RoleOptionOut])
+def list_role_options(db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    return db.query(RoleOption).order_by(RoleOption.sort_order, RoleOption.id).all()
+
+
+@app.get("/api/roles/public", response_model=List[RoleOptionOut])
+def list_public_role_options(db: Session = Depends(get_db)):
+    # Intentionally unauthenticated: this is what populates the "Sign in
+    # as" dropdown on the login page itself, before anyone has a token.
+    return (
+        db.query(RoleOption)
+        .filter(RoleOption.is_active == True)
+        .order_by(RoleOption.sort_order, RoleOption.id)
+        .all()
+    )
+
+
+@app.patch("/api/roles/{role_id}", response_model=RoleOptionOut)
+def update_role_option(role_id: int, payload: RoleOptionUpdate, db: Session = Depends(get_db),
+                        admin: User = Depends(require_roles("admin"))):
+    ro = db.query(RoleOption).filter(RoleOption.id == role_id).first()
+    if not ro:
+        raise HTTPException(status_code=404, detail="Role not found")
+    data = payload.dict(exclude_unset=True)
+    if "label" in data:
+        label = (data["label"] or "").strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="Display label cannot be empty")
+        ro.label = label
+    if "is_active" in data:
+        new_active = bool(data["is_active"])
+        if not new_active and ro.is_active:
+            other_active = db.query(RoleOption).filter(
+                RoleOption.is_active == True, RoleOption.id != ro.id
+            ).count()
+            if other_active == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="At least one role must remain visible on the sign-in page."
+                )
+        ro.is_active = new_active
+    db.commit()
+    db.refresh(ro)
+    log_action(db, admin.id, "role.update", f"Updated sign-in role option '{ro.key}'")
+    return ro
+
+
+@app.post("/api/roles/{role_id}/move", response_model=List[RoleOptionOut])
+def move_role_option(role_id: int, payload: RoleOptionMoveIn, db: Session = Depends(get_db),
+                      admin: User = Depends(require_roles("admin"))):
+    rows = db.query(RoleOption).order_by(RoleOption.sort_order, RoleOption.id).all()
+    idx = next((i for i, r in enumerate(rows) if r.id == role_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Role not found")
+    swap_idx = idx - 1 if payload.direction == "up" else idx + 1
+    if swap_idx < 0 or swap_idx >= len(rows):
+        return rows
+    moved_key = rows[idx].key
+    rows[idx].sort_order, rows[swap_idx].sort_order = swap_idx, idx
+    # Re-derive a clean, gap-free ordering from the swap.
+    rows.sort(key=lambda r: r.sort_order)
+    for i, r in enumerate(rows):
+        r.sort_order = i
+    db.commit()
+    log_action(db, admin.id, "role.reorder", f"Moved sign-in role option '{moved_key}' {payload.direction}")
+    return db.query(RoleOption).order_by(RoleOption.sort_order, RoleOption.id).all()
 
 
 # ---------------------------- Work Plans ------------------------------------
@@ -4976,4 +5128,4 @@ def get_audit_logs(db: Session = Depends(get_db), user: User = Depends(require_r
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}
+    return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}  
