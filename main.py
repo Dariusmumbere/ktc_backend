@@ -531,7 +531,7 @@ class RevenueSourceItem(Base):
 
 
 class RevenueLineItem(Base):
-    """A single row on one of four Programme-Based Budgeting System (PBS)
+    """A single row on one of five Programme-Based Budgeting System (PBS)
     revenue performance pages:
       - "monthly"        → Approved Monthly Revenue Budget Estimates and
                             Actual LG Revenue & Transfers Realized
@@ -545,8 +545,15 @@ class RevenueLineItem(Base):
       - "rev_by_category"→ Revenue Performance Plan by Category &
                             Source (4 quarterly periods, one row per
                             individual revenue category/source)
+      - "rev_by_category_monthly" → the same Category & Source breakdown
+                            as "rev_by_category" above (same Originating
+                            Revenue Source column), but on 12 monthly
+                            periods (Jul–Jun) instead of Q1–Q4, and with no
+                            Performance Gap band — this is Table 3 / "A3"
+                            on the frontend, matching the Council's
+                            "Monthly Revenue Projections" sheet.
 
-    One table serves all four pages (discriminated by period_type) since
+    One table serves all five pages (discriminated by period_type) since
     they share an identical shape: a Chart-of-Accounts style hierarchy of
     category / sub-category / item / subtotal / grand-total rows, each
     carrying an Approved Budget Estimate and an Actual Realized amount per
@@ -559,7 +566,9 @@ class RevenueLineItem(Base):
     __tablename__ = "revenue_line_items"
     id = Column(Integer, primary_key=True, index=True)
     work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False)
-    period_type = Column(String(20), nullable=False)  # monthly | quarterly | rev_by_source | rev_by_category
+    # Widened from VARCHAR(20) to VARCHAR(30) to fit "rev_by_category_monthly"
+    # (24 chars) — see the ALTER TABLE migration below for existing databases.
+    period_type = Column(String(30), nullable=False)  # monthly | quarterly | rev_by_source | rev_by_category | rev_by_category_monthly
     sort_order = Column(Integer, default=0, nullable=False)
     code = Column(String(30))
     label = Column(Text, nullable=False)
@@ -568,18 +577,19 @@ class RevenueLineItem(Base):
     # Total" row, grand_total = the sheet's final "Grand Total" row.
     row_type = Column(String(20), default="item", nullable=False)
     indent = Column(Integer, default=0)
-    # JSON-encoded list of floats — length 12 for "monthly", 4 for
-    # "quarterly"/"rev_by_source"/"rev_by_category". Stored as Text (not the SQLAlchemy JSON type)
-    # so this works identically on SQLite and Postgres without relying on
-    # dialect-specific JSON support.
+    # JSON-encoded list of floats — length 12 for "monthly"/"rev_by_category_monthly",
+    # 4 for "quarterly"/"rev_by_source"/"rev_by_category". Stored as Text (not the
+    # SQLAlchemy JSON type) so this works identically on SQLite and Postgres
+    # without relying on dialect-specific JSON support.
     approved_periods = Column(Text)
     approved_annual = Column(Float, default=0)
     actual_periods = Column(Text)
     actual_annual = Column(Float, default=0)
     # The department/source that generates this revenue sub-item (e.g.
     # "Finance", "Works & Technical") — only meaningful on, and only ever
-    # populated for, "rev_by_category" rows, matching the "Originating
-    # Revenue Source" column in the Council's A2 workbook.
+    # populated for, "rev_by_category"/"rev_by_category_monthly" rows,
+    # matching the "Originating Revenue Source" column in the Council's
+    # A2/A3 workbook sheets.
     originating_revenue_source = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
@@ -822,6 +832,12 @@ def _run_lightweight_migrations():
         # Only shown/edited on the "Revenue Performance Plan by Category &
         # Source" table, matching the Council's own A2 workbook layout.
         "ALTER TABLE revenue_line_items ADD COLUMN originating_revenue_source VARCHAR(200)",
+        # Widen period_type from VARCHAR(20) to VARCHAR(30) so it can hold
+        # "rev_by_category_monthly" (24 chars) — Table 3, the monthly
+        # variant of the Category & Source table. No-op on SQLite (which
+        # doesn't enforce VARCHAR length and doesn't support ALTER COLUMN
+        # TYPE), and the try/except below already swallows that.
+        "ALTER TABLE revenue_line_items ALTER COLUMN period_type TYPE VARCHAR(30)",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -1159,8 +1175,9 @@ class RevenueSourceClearResult(BaseModel):
     deleted: int
 
 
-PERIOD_TYPES = ("monthly", "quarterly", "rev_by_source", "rev_by_category")
-_PERIOD_COUNTS = {"monthly": 12, "quarterly": 4, "rev_by_source": 4, "rev_by_category": 4}
+PERIOD_TYPES = ("monthly", "quarterly", "rev_by_source", "rev_by_category", "rev_by_category_monthly")
+_PERIOD_COUNTS = {"monthly": 12, "quarterly": 4, "rev_by_source": 4, "rev_by_category": 4, "rev_by_category_monthly": 12}
+_PERIOD_TYPES_ERROR_DETAIL = "period_type must be one of monthly, quarterly, rev_by_source, rev_by_category, rev_by_category_monthly"
 
 
 class RevenueLineItemIn(BaseModel):
@@ -2532,10 +2549,22 @@ def _pbs_indent(code, row_type: str) -> int:
     return 1
 
 
-def _parse_monthly_revenue_sheet(ws) -> List[dict]:
-    """Layout: A=Code, B=Fund Category and Source of Financing, C=blank,
+def _parse_monthly_revenue_sheet(ws, has_originating_source: bool = False) -> List[dict]:
+    """Layout when has_originating_source=False (the "monthly" page):
+    A=Code, B=Fund Category and Source of Financing, C=blank,
     D:O (idx 3-14)=12 monthly Approved figures, P (idx 15)=Annual Approved,
-    Q:AB (idx 16-27)=12 monthly Actual figures, AC (idx 28)=Annual Actual."""
+    Q:AB (idx 16-27)=12 monthly Actual figures, AC (idx 28)=Annual Actual.
+
+    Layout when has_originating_source=True (the "rev_by_category_monthly"
+    page / Table 3, matching the Council's "Monthly Revenue Projections"
+    sheet): the same shape, shifted one column right by an inserted
+    "Originating Revenue Source" text column — A=Code, B=Fund Category and
+    Source of Financing, C=Originating Revenue Source, D:O (idx 3-14)=12
+    monthly Approved figures, P (idx 15)=Annual Approved, Q:AB (idx
+    16-27)=12 monthly Actual figures, AC (idx 28)=Annual Actual. (The
+    column positions happen to land in the same place either way since
+    column C — blank in the plain "monthly" sheet — is exactly where the
+    origin column lives in this one.)"""
     out = []
     all_rows = list(ws.iter_rows(values_only=True))
     for row in all_rows[2:]:
@@ -2545,6 +2574,10 @@ def _parse_monthly_revenue_sheet(ws) -> List[dict]:
         label = row[1] if len(row) > 1 else None
         if label is None or str(label).strip() == "":
             continue
+        originating_source = None
+        if has_originating_source:
+            raw_source = row[2] if len(row) > 2 else None
+            originating_source = str(raw_source).strip() if raw_source is not None and str(raw_source).strip() != "" else None
         approved = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(3, 15)]
         approved_annual = parse_amount(row[15]) if len(row) > 15 else sum(approved)
         actual = [parse_amount(row[i]) if i < len(row) else 0.0 for i in range(16, 28)]
@@ -2553,6 +2586,7 @@ def _parse_monthly_revenue_sheet(ws) -> List[dict]:
         out.append({
             "code": str(code).strip() if code is not None and str(code).strip() != "" else None,
             "label": str(label).strip(),
+            "originating_revenue_source": originating_source,
             "row_type": row_type,
             "indent": _pbs_indent(code, row_type),
             "approved_periods": approved,
@@ -2626,7 +2660,7 @@ def list_revenue_line_items(work_plan_id: Optional[int] = None, period_type: Opt
 def create_revenue_line_item(payload: RevenueLineItemIn, db: Session = Depends(get_db),
                               admin: User = Depends(require_roles("admin"))):
     if payload.period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
+        raise HTTPException(status_code=400, detail=_PERIOD_TYPES_ERROR_DETAIL)
     wp = db.query(WorkPlan).filter(WorkPlan.id == payload.work_plan_id).first()
     if not wp:
         raise HTTPException(status_code=400, detail="Selected work plan does not exist")
@@ -2711,7 +2745,7 @@ def update_revenue_line_item(item_id: int, payload: RevenueLineItemUpdate, db: S
 def clear_revenue_line_items(work_plan_id: int, period_type: str, db: Session = Depends(get_db),
                               admin: User = Depends(require_roles("admin"))):
     if period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
+        raise HTTPException(status_code=400, detail=_PERIOD_TYPES_ERROR_DETAIL)
     rows = db.query(RevenueLineItem).filter(
         RevenueLineItem.work_plan_id == work_plan_id,
         RevenueLineItem.period_type == period_type,
@@ -2742,25 +2776,28 @@ def delete_revenue_line_item(item_id: int, db: Session = Depends(get_db),
 async def import_revenue_line_items(work_plan_id: int, period_type: str, file: UploadFile = File(...),
                                      db: Session = Depends(get_db),
                                      admin: User = Depends(require_roles("admin"))):
-    """Imports one of the four PBS revenue sheets ("Monthly Revenue
+    """Imports one of the five PBS revenue sheets ("Monthly Revenue
     Projections", "Quarterly Revenue Projections", "Summary of the
-    Revenue Performance Plan by Source" or "Revenue Performance Plan by
-    Category & Source") from the Council's Annual Budget Framework workbook.
-    Importing REPLACES every existing row for this work plan + period_type —
-    the workbook is the master copy of the whole table, not a set of rows to
-    merge in.
+    Revenue Performance Plan by Source", "Revenue Performance Plan by
+    Category & Source", or its monthly variant "A3: Detailed Monthly
+    Revenue Performance Plan by Category and Source") from the Council's
+    Annual Budget Framework workbook. Importing REPLACES every existing
+    row for this work plan + period_type — the workbook is the master copy
+    of the whole table, not a set of rows to merge in.
 
     If the uploaded workbook has multiple sheets (as the combined "ANNUAL
     Budget Framework" file does), the sheet whose name best matches the
     requested period_type is used automatically, so the same workbook can
-    be dropped onto any of the four Import buttons without the user needing
+    be dropped onto any of the five Import buttons without the user needing
     to pick the right tab themselves. For "rev_by_source"/"rev_by_category"
     this also matches a sheet literally named "Summary" (the Council's
-    workbook keeps both tables on one sheet named "Summary"), falling
-    back to the first sheet if nothing matches.
+    workbook keeps both tables on one sheet named "Summary"), and
+    "rev_by_category_monthly" matches a sheet containing "monthly" or
+    "category" (e.g. "Monthly Revenue Projections"), falling back to the
+    first sheet if nothing matches.
     """
     if period_type not in PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="period_type must be one of monthly, quarterly, rev_by_source, rev_by_category")
+        raise HTTPException(status_code=400, detail=_PERIOD_TYPES_ERROR_DETAIL)
 
     try:
         import openpyxl
@@ -2788,9 +2825,15 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
     # names; "rev_by_source" and "rev_by_category" don't (the Council's
     # combined workbook keeps both tables on one sheet named "Summary"),
     # so those two additionally match a sheet literally named "Summary".
-    hints = [period_type]
-    if period_type in ("rev_by_source", "rev_by_category"):
-        hints.append("summary")
+    # "rev_by_category_monthly" (Table 3) is itself a long, non-matching
+    # string, so it's matched via "monthly"/"category" instead — its own
+    # sheet is typically named "Monthly Revenue Projections".
+    if period_type == "rev_by_category_monthly":
+        hints = ["monthly", "category"]
+    else:
+        hints = [period_type]
+        if period_type in ("rev_by_source", "rev_by_category"):
+            hints.append("summary")
     ws = None
     for name in wb.sheetnames:
         if any(h in name.lower() for h in hints):
@@ -2799,7 +2842,10 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
     if ws is None:
         ws = wb.active
 
-    parsed = _parse_monthly_revenue_sheet(ws) if period_type == "monthly" else _parse_quarterly_style_sheet(ws, has_originating_source=(period_type == "rev_by_category"))
+    if period_type in ("monthly", "rev_by_category_monthly"):
+        parsed = _parse_monthly_revenue_sheet(ws, has_originating_source=(period_type == "rev_by_category_monthly"))
+    else:
+        parsed = _parse_quarterly_style_sheet(ws, has_originating_source=(period_type == "rev_by_category"))
 
     if not parsed:
         raise HTTPException(
@@ -4828,17 +4874,19 @@ def _pdf_workplan_table(codes, committed_map):
 
 # ---------------------------------------------------------------------------
 # PBS Revenue Performance table (monthly / quarterly / rev_by_source /
-# rev_by_category) — mirrors the frontend's renderRevLineTable()/
-# REV_LINE_PAGES so the PDF shows exactly the same table that's on screen
-# for whichever PBS page the download was triggered from.
+# rev_by_category / rev_by_category_monthly) — mirrors the frontend's
+# renderRevLineTable()/REV_LINE_PAGES so the PDF shows exactly the same
+# table that's on screen for whichever PBS page the download was triggered
+# from.
 # ---------------------------------------------------------------------------
 REV_LINE_PDF_PERIOD_LABELS = {
     "monthly": ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
     "quarterly": ["Q1", "Q2", "Q3", "Q4"],
     "rev_by_source": ["Q1", "Q2", "Q3", "Q4"],
     "rev_by_category": ["Q1", "Q2", "Q3", "Q4"],
+    "rev_by_category_monthly": ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
 }
-REV_LINE_PDF_HAS_GAP = {"monthly": False, "quarterly": True, "rev_by_source": True, "rev_by_category": True}
+REV_LINE_PDF_HAS_GAP = {"monthly": False, "quarterly": True, "rev_by_source": True, "rev_by_category": True, "rev_by_category_monthly": False}
 
 
 def _pdf_rev_line_table(rows: list, period_type: str):
@@ -4879,7 +4927,7 @@ def _pdf_rev_line_table(rows: list, period_type: str):
     # Widths sized for portrait A4 (doc margins 28pt each side leave ~535pt
     # of usable width) — the whole report is built in strict portrait A4,
     # never landscape (see build_workplan_report_pdf).
-    if period_type == "monthly":
+    if period_type in ("monthly", "rev_by_category_monthly"):
         code_w, label_w, period_w, annual_w = 17, 62, 17, 24
     else:
         code_w, label_w, period_w, annual_w = 20, 90, 28, 31
@@ -4903,15 +4951,16 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
         Expenditure Estimates table (no revenue tables — this page hides
         them, see applyWorkplanSubtabDisplay() in the frontend).
       - "annual" (default): Summary of the Revenue Performance Plan by
-        Source + Revenue Performance Plan by Category & Source +
-        Approved Quarterly Revenue Budget Estimates and Quarterly Revenue
-        Performance Gap + the Annual Work Plan and Budget Estimates table.
+        Source + Revenue Performance Plan by Category & Source + its
+        monthly variant (Table 3) + Approved Quarterly Revenue Budget
+        Estimates and Quarterly Revenue Performance Gap + the Annual Work
+        Plan and Budget Estimates table.
         (The Department Budget Summary that used to appear on this page has
         been replaced by the two PBS revenue tables above; it still appears
         on the "expenditure" page.)
     `revline_data` maps period_type ("monthly"/"quarterly"/"rev_by_source"/
-    "rev_by_category") to the list of RevenueLineItemOut rows needed for
-    that page.
+    "rev_by_category"/"rev_by_category_monthly") to the list of
+    RevenueLineItemOut rows needed for that page.
 
     The whole report — every page, on every PBS sub item — is built in
     strict portrait A4. Tables that used to need landscape width (the
@@ -4976,6 +5025,9 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
         story.append(Paragraph("REVENUE PERFORMANCE PLAN BY CATEGORY &amp; SOURCE", _pdf_h2))
         story.append(_pdf_rev_line_table(revline_data.get("rev_by_category", []), "rev_by_category"))
         story.append(PageBreak())
+        story.append(Paragraph("MONTHLY REVENUE PERFORMANCE PLAN BY CATEGORY &amp; SOURCE", _pdf_h2))
+        story.append(_pdf_rev_line_table(revline_data.get("rev_by_category_monthly", []), "rev_by_category_monthly"))
+        story.append(PageBreak())
         story.append(Paragraph("MONTHLY LOCAL REVENUE/GOU TRANSFERS ESTIMATES VS. ACTUAL REALIZED", _pdf_h2))
         story.append(_pdf_rev_line_table(revline_data.get("monthly", []), "monthly"))
         story.append(PageBreak())
@@ -4988,7 +5040,7 @@ def build_workplan_report_pdf(wp: "WorkPlan", codes: list, committed_map: dict, 
 
 
 _REPORT_PDF_PAGES = ("rev-monthly", "expenditure", "annual")
-_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["rev_by_source", "rev_by_category", "monthly"]}
+_REPORT_PDF_PERIOD_TYPES_NEEDED = {"rev-monthly": ["monthly"], "expenditure": [], "annual": ["rev_by_source", "rev_by_category", "rev_by_category_monthly", "monthly"]}
 
 
 @app.get("/api/work-plans/{wp_id}/report-pdf")
@@ -5128,4 +5180,4 @@ def get_audit_logs(db: Session = Depends(get_db), user: User = Depends(require_r
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}  
+    return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}
