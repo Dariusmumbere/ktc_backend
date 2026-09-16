@@ -188,6 +188,18 @@ def _invalidate_revenue_source_caches():
     _cache_invalidate_prefix("revenue_sources:")
 
 
+def _invalidate_revenue_line_item_caches():
+    # Backs the three PBS revenue pages that share the RevenueLineItem
+    # table: Monthly Local Revenue/GoU Transfers Estimates vs. Actual
+    # Realized (Sub Item 1), and — on the Annual Work Plan & Budget
+    # Estimates sub item (Sub Item 3) — the Summary of the Revenue
+    # Performance Plan by Source, by Category & Source, and its Monthly
+    # variant. One prefix covers every (work_plan_id, period_type)
+    # combination since writes here are infrequent enough that a broad
+    # invalidation costs nothing and is simpler than tracking each key.
+    _cache_invalidate_prefix("revenue_line_items:")
+
+
 # --------------------------------------------------------------------------
 # Shared numeric amount parser
 # --------------------------------------------------------------------------
@@ -2647,13 +2659,27 @@ def _parse_quarterly_style_sheet(ws, has_originating_source: bool = False) -> Li
 @app.get("/api/revenue-line-items", response_model=List[RevenueLineItemOut])
 def list_revenue_line_items(work_plan_id: Optional[int] = None, period_type: Optional[str] = None,
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # This one endpoint backs all three PBS sub items (see
+    # _invalidate_revenue_line_item_caches above), so it's the single
+    # heaviest-hit read in that part of the app — every work-plan switch
+    # and every tab switch between Sub Item 1 and Sub Item 3 used to mean
+    # a fresh DB round-trip. Cached per (work_plan_id, period_type)
+    # combination, same TTL/invalidation pattern as budget_codes and
+    # revenue_sources above, so repeat requests are served instantly and
+    # a write to any row still invalidates immediately.
+    cache_key = f"revenue_line_items:{work_plan_id}:{period_type}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     q = db.query(RevenueLineItem)
     if work_plan_id:
         q = q.filter(RevenueLineItem.work_plan_id == work_plan_id)
     if period_type:
         q = q.filter(RevenueLineItem.period_type == period_type)
     q = q.order_by(RevenueLineItem.sort_order.asc(), RevenueLineItem.id.asc())
-    return [revenue_line_item_to_out(r) for r in q.all()]
+    result = [revenue_line_item_to_out(r) for r in q.all()]
+    _cache_set(cache_key, result)
+    return result
 
 
 @app.post("/api/revenue-line-items", response_model=RevenueLineItemOut)
@@ -2693,6 +2719,7 @@ def create_revenue_line_item(payload: RevenueLineItemIn, db: Session = Depends(g
     db.add(r)
     db.commit()
     db.refresh(r)
+    _invalidate_revenue_line_item_caches()
     log_action(db, admin.id, "revenue_line_item.create", f"{payload.period_type}: {r.label}")
     return revenue_line_item_to_out(r)
 
@@ -2737,6 +2764,7 @@ def update_revenue_line_item(item_id: int, payload: RevenueLineItemUpdate, db: S
 
     db.commit()
     db.refresh(r)
+    _invalidate_revenue_line_item_caches()
     log_action(db, admin.id, "revenue_line_item.update", f"{r.period_type}: {r.label}")
     return revenue_line_item_to_out(r)
 
@@ -2754,6 +2782,7 @@ def clear_revenue_line_items(work_plan_id: int, period_type: str, db: Session = 
     for r in rows:
         db.delete(r)
     db.commit()
+    _invalidate_revenue_line_item_caches()
     log_action(db, admin.id, "revenue_line_item.clear_all",
                f"Cleared {deleted} {period_type} revenue row(s) from work plan #{work_plan_id}")
     return RevenueLineItemClearResult(deleted=deleted)
@@ -2768,6 +2797,7 @@ def delete_revenue_line_item(item_id: int, db: Session = Depends(get_db),
     label = r.label
     db.delete(r)
     db.commit()
+    _invalidate_revenue_line_item_caches()
     log_action(db, admin.id, "revenue_line_item.delete", label)
     return {"ok": True}
 
@@ -2884,6 +2914,7 @@ async def import_revenue_line_items(work_plan_id: int, period_type: str, file: U
         created += 1
 
     db.commit()
+    _invalidate_revenue_line_item_caches()
 
     log_action(
         db,
