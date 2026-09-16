@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean, DateTime,
-    ForeignKey, Text, Enum as SAEnum, func
+    ForeignKey, Text, Enum as SAEnum, func, text
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session, joinedload
 from sqlalchemy.exc import IntegrityError
@@ -5181,3 +5181,10 @@ def get_audit_logs(db: Session = Depends(get_db), user: User = Depends(require_r
 @app.get("/api/health")
 def health():
     return {"status": "ok", "time": dt.datetime.utcnow().isoformat()}
+
+
+@app.get("/api/health/db")
+def health_db(db: Session = Depends(get_db)):
+    
+    db.execute(text("SELECT 1"))
+    return {"status": "ok", "db": "ok", "time": dt.datetime.utcnow().isoformat()}
