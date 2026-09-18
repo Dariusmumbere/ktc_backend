@@ -3093,9 +3093,10 @@ def clear_budget_codes(work_plan_id: int, department_id: Optional[int] = None, d
     deleted (the department the admin has selected in the Departments
     dropdown); all other departments' rows are left untouched. When
     department_id is omitted, every row for the work plan is deleted, as
-    before. Rows that already have requisitions raised against them are
-    left in place (same protection as the single-row delete endpoint) and
-    reported back as skipped rather than blocking the whole operation."""
+    before. Rows that already have requisitions raised against them are no
+    longer skipped — the requisitions are preserved but unlinked from the
+    code/activity being removed (see delete_budget_code) so the whole
+    selection is always cleared in one go."""
     wp = db.query(WorkPlan).filter(WorkPlan.id == work_plan_id).first()
     if not wp:
         raise HTTPException(status_code=400, detail="Selected work plan does not exist")
@@ -3109,11 +3110,13 @@ def clear_budget_codes(work_plan_id: int, department_id: Optional[int] = None, d
 
     codes = query.all()
     deleted = 0
-    skipped = 0
     for bc in codes:
-        if db.query(Requisition).filter(Requisition.budget_code_id == bc.id).count() > 0:
-            skipped += 1
-            continue
+        activity_ids = [a.id for a in db.query(Activity.id).filter(Activity.budget_code_id == bc.id).all()]
+        if activity_ids:
+            db.query(Requisition).filter(Requisition.activity_id.in_(activity_ids)).update(
+                {Requisition.activity_id: None}, synchronize_session=False)
+        db.query(Requisition).filter(Requisition.budget_code_id == bc.id).update(
+            {Requisition.budget_code_id: None}, synchronize_session=False)
         db.query(Activity).filter(Activity.budget_code_id == bc.id).delete()
         db.delete(bc)
         deleted += 1
@@ -3121,9 +3124,9 @@ def clear_budget_codes(work_plan_id: int, department_id: Optional[int] = None, d
     db.commit()
     scope = f"department #{department_id}" if department_id is not None else "all departments"
     log_action(db, admin.id, "budget_code.clear_all",
-               f"Cleared {deleted} budget estimate row(s) from work plan #{work_plan_id} ({scope}) ({skipped} skipped — have requisitions on record)")
+               f"Cleared {deleted} budget estimate row(s) from work plan #{work_plan_id} ({scope})")
     _invalidate_budget_code_caches()
-    return BudgetCodeClearResult(deleted=deleted, skipped=skipped)
+    return BudgetCodeClearResult(deleted=deleted, skipped=0)
 
 
 @app.patch("/api/budget-codes/{bc_id}", response_model=BudgetCodeOut)
@@ -3150,8 +3153,18 @@ def delete_budget_code(bc_id: int, db: Session = Depends(get_db), admin: User = 
     bc = db.query(BudgetCode).filter(BudgetCode.id == bc_id).first()
     if not bc:
         raise HTTPException(status_code=404, detail="Budget code not found")
-    if db.query(Requisition).filter(Requisition.budget_code_id == bc_id).count() > 0:
-        raise HTTPException(status_code=400, detail="Cannot delete a budget code that has requisitions raised against it")
+    # Requisitions raised against this code are no longer a block on
+    # deletion — the requisition itself is preserved (it's part of the
+    # accountability trail) but can't keep pointing at a code/activity
+    # that's about to be removed, so both links are cleared first.
+    # budget_output_code_text already keeps a free-text record of the
+    # code as typed/matched on the requisition, so nothing is lost.
+    activity_ids = [a.id for a in db.query(Activity.id).filter(Activity.budget_code_id == bc_id).all()]
+    if activity_ids:
+        db.query(Requisition).filter(Requisition.activity_id.in_(activity_ids)).update(
+            {Requisition.activity_id: None}, synchronize_session=False)
+    db.query(Requisition).filter(Requisition.budget_code_id == bc_id).update(
+        {Requisition.budget_code_id: None}, synchronize_session=False)
     db.query(Activity).filter(Activity.budget_code_id == bc_id).delete()
     db.delete(bc)
     db.commit()
