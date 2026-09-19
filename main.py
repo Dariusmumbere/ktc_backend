@@ -3213,6 +3213,8 @@ _IMPORT_COLUMN_ALIASES = {
     "budget output code": "code",
     "budget output": "output_description",
     "budget output description": "output_description",
+    "activity output": "output_description",
+    "activity output description": "output_description",
     "piap output description": "piap_output_description",
     "piap output indicator": "piap_output_indicator",
     "unit of measure": "unit_of_measure",
@@ -3320,7 +3322,7 @@ def _existing_budget_code_keys(db: Session, work_plan_id: int) -> set:
 
 
 def _budget_code_dup_message(dup_key: tuple) -> str:
-    field = "Budget Output Code" if dup_key[0] == "code" else "Budget Output Description"
+    field = "Budget Output Code" if dup_key[0] == "code" else "Activity Output Description"
     return f"a budget estimate row with this {field} already exists in this work plan"
 
 
@@ -3418,7 +3420,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
     if "output_description" not in col_map.values() or "code" not in col_map.values():
         raise HTTPException(
             status_code=400,
-            detail="The workbook must at least include 'Budget Output Code' and 'Budget Output Description' columns"
+            detail="The workbook must at least include 'Budget Output Code' and 'Activity Output Description' (or 'Budget Output Description') columns"
         )
 
     # FIX (2): build the department lookup keyed by a normalized name (case
@@ -3515,7 +3517,7 @@ async def import_budget_codes(work_plan_id: int, file: UploadFile = File(...),
         if not code:
             row_warnings.append(f"Row {row_idx}: Budget Output Code was blank — imported with a blank code")
         if not output_description:
-            row_warnings.append(f"Row {row_idx}: Budget Output Description was blank — imported with a blank description")
+            row_warnings.append(f"Row {row_idx}: Activity Output Description was blank — imported with a blank description")
 
         # Reject this row outright if it's already in the database (or was
         # already imported earlier in this same workbook) — same rule the
