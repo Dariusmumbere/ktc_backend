@@ -4551,7 +4551,12 @@ REPORT_CLERK_OUTRO = [
 ]
 REPORT_CLERK_SIGNOFF = ["TOWN CLERK", "Karugutu Town Council", "Ntoroko District Local Government"]
 
-# Executive summary: list of ("h3"|"h4"|"p"|"bullets", content) tuples, rendered in order.
+# Executive summary: list of ("h3"|"h4"|"p"|"bullets"|"break", content) tuples,
+# rendered in order. A ("break", None) entry forces a new PDF page at that
+# point, mirroring the frontend's data-force-break markers (used so
+# "Annual Budget Framework for FY 2026/27" and the paragraph that follows
+# it open their own pages here too, instead of just flowing wherever
+# reportlab's automatic pagination happens to break them).
 REPORT_EXEC_SUMMARY = [
     ("h3", "Karugutu Town Council Revenue Analysis for FY 2026/27"),
     ("p", "The Council\u2019s approved revenue framework for FY 2026/27 amounts to UGX 327,113,640, reflecting a balanced financing strategy that combines Central Government Transfers, Locally Raised Revenue (LRR), and limited development partner support. Central Government Transfers constitute the largest share of the resource envelope at UGX 175,991,640 (53.8%), primarily comprising Urban Unconditional Grant (Non-Wage), Urban Discretionary Development Equalization Grant (DDEG), and the Uganda Road Fund, thereby providing the financial foundation for recurrent service delivery and infrastructure maintenance."),
@@ -4584,9 +4589,11 @@ REPORT_EXEC_SUMMARY = [
     ("p", "The integration of digital planning tools, electronic records management, GIS-based planning systems, and performance reporting further reinforces the Council's commitment to transparency, innovation, and effective public sector management."),
     ("h4", "5. Strategic Outlook"),
     ("p", "The FY 2026/27 Annual Work Plan represents the practical implementation roadmap for the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030), providing a clear pathway for achieving the Council's long-term development aspirations while ensuring accountability, efficiency, and value for public resources."),
+    ("break", None),
     ("h3", "Annual Budget Framework for FY 2026/27"),
     ("p", "The Annual Budget Framework for FY 2026/27 provides the strategic financial planning and resource allocation mechanism through which Karugutu Town Council will implement its development priorities and statutory mandates during the financial year 1 July 2026 to 30 June 2027."),
     ("p", "The budget framework is financed through a combination of locally generated revenue, central government transfers, external financing where applicable, and other lawful sources of revenue, allocated across programmes, departments, and budget outputs."),
+    ("break", None),
     ("p", "The framework adopts a results-based and programme-oriented approach, ensuring that financial resources are directly linked to measurable outputs, outcomes, and performance indicators, guided by principles of fiscal discipline, value for money, equity, transparency, and accountability."),
     ("p", "To enhance accountability and effective budget execution, the Council will undertake participatory planning, stakeholder consultations, budget conferences, technical planning committee reviews, council approvals, and regular monitoring and evaluation."),
     ("h3", "Annual Workplan and Budget Output Performance Targets for FY 2026/27"),
@@ -4678,6 +4685,8 @@ def _pdf_exec_summary_flowables():
             flow.append(Paragraph(content, _pdf_body))
         elif kind == "bullets":
             flow += [Paragraph("\u2022 " + b, _pdf_bullet) for b in content]
+        elif kind == "break":
+            flow.append(PageBreak())
     return flow
 
 
