@@ -418,6 +418,52 @@ class ReportFrontmatter(Base):
     updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
+class BudgetEstimatesSummary(Base):
+    """One row per work plan holding the manually-entered figures for the
+    "Part I: Summary of the Local Government Budget Estimates" / "A1:
+    Revenue Performance and Plans by Source" table shown on the "Approved
+    LG Expenditure Estimates" sub item (sub item 2). This table compares
+    the prior financial year's Approved Budget against the current work
+    plan's Approved Budget, by revenue category, each split into its
+    Higher Local Government (HLG) and Lower Local Government (LLG)
+    portions — mirroring the layout of the printed PBS Budget Estimates
+    form. Every figure is entered directly by an admin (there is no
+    reliable automatic source for the prior year's approved totals), and
+    each category's own Total, plus the overall Grand Total, is derived
+    on the frontend as the sum of its Higher + Lower cells."""
+    __tablename__ = "budget_estimates_summary"
+    id = Column(Integer, primary_key=True, index=True)
+    work_plan_id = Column(Integer, ForeignKey("work_plans.id"), nullable=False, unique=True)
+    prior_year_label = Column(String(20), nullable=True)  # e.g. "2025/26" — auto-derived on the frontend if left blank
+    # Locally Raised Revenues
+    lrr_higher_prior = Column(Float, default=0)
+    lrr_lower_prior = Column(Float, default=0)
+    lrr_higher_current = Column(Float, default=0)
+    lrr_lower_current = Column(Float, default=0)
+    # Discretionary Government Transfers
+    dgt_higher_prior = Column(Float, default=0)
+    dgt_lower_prior = Column(Float, default=0)
+    dgt_higher_current = Column(Float, default=0)
+    dgt_lower_current = Column(Float, default=0)
+    # Conditional Government Transfers
+    cgt_higher_prior = Column(Float, default=0)
+    cgt_lower_prior = Column(Float, default=0)
+    cgt_higher_current = Column(Float, default=0)
+    cgt_lower_current = Column(Float, default=0)
+    # Other Government Transfers
+    ogt_higher_prior = Column(Float, default=0)
+    ogt_lower_prior = Column(Float, default=0)
+    ogt_higher_current = Column(Float, default=0)
+    ogt_lower_current = Column(Float, default=0)
+    # External Financing
+    ext_higher_prior = Column(Float, default=0)
+    ext_lower_prior = Column(Float, default=0)
+    ext_higher_current = Column(Float, default=0)
+    ext_lower_current = Column(Float, default=0)
+    updated_at = Column(DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow)
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
 class BudgetCode(Base):
     __tablename__ = "budget_codes"
     id = Column(Integer, primary_key=True, index=True)
@@ -1001,6 +1047,36 @@ class WorkPlanIn(BaseModel):
 class WorkPlanOut(WorkPlanIn):
     id: int
     is_active: bool
+    class Config:
+        from_attributes = True
+
+
+class BudgetEstimatesSummaryIn(BaseModel):
+    work_plan_id: int
+    prior_year_label: Optional[str] = None
+    lrr_higher_prior: Optional[float] = 0
+    lrr_lower_prior: Optional[float] = 0
+    lrr_higher_current: Optional[float] = 0
+    lrr_lower_current: Optional[float] = 0
+    dgt_higher_prior: Optional[float] = 0
+    dgt_lower_prior: Optional[float] = 0
+    dgt_higher_current: Optional[float] = 0
+    dgt_lower_current: Optional[float] = 0
+    cgt_higher_prior: Optional[float] = 0
+    cgt_lower_prior: Optional[float] = 0
+    cgt_higher_current: Optional[float] = 0
+    cgt_lower_current: Optional[float] = 0
+    ogt_higher_prior: Optional[float] = 0
+    ogt_lower_prior: Optional[float] = 0
+    ogt_higher_current: Optional[float] = 0
+    ogt_lower_current: Optional[float] = 0
+    ext_higher_prior: Optional[float] = 0
+    ext_lower_prior: Optional[float] = 0
+    ext_higher_current: Optional[float] = 0
+    ext_lower_current: Optional[float] = 0
+
+
+class BudgetEstimatesSummaryOut(BudgetEstimatesSummaryIn):
     class Config:
         from_attributes = True
 
@@ -2066,6 +2142,36 @@ def update_annual_report_content(payload: ReportFrontmatterIn, db: Session = Dep
     db.commit()
     db.refresh(row)
     log_action(db, admin.id, "annual_report_content.update", "Report front matter updated")
+    return row
+
+
+# ---------------------- Budget Estimates Summary (Part I / A1) --------------
+# The "Part I: Summary of the Local Government Budget Estimates" / "A1:
+# Revenue Performance and Plans by Source" table shown on the "Approved LG
+# Expenditure Estimates" sub item (sub item 2). One row per work plan;
+# figures are entered directly by an admin.
+
+@app.get("/api/budget-estimates-summary", response_model=BudgetEstimatesSummaryOut)
+def get_budget_estimates_summary(work_plan_id: int = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.query(BudgetEstimatesSummary).filter(BudgetEstimatesSummary.work_plan_id == work_plan_id).first()
+    if not row:
+        return BudgetEstimatesSummaryOut(work_plan_id=work_plan_id)
+    return row
+
+
+@app.patch("/api/budget-estimates-summary", response_model=BudgetEstimatesSummaryOut)
+def update_budget_estimates_summary(payload: BudgetEstimatesSummaryIn, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    row = db.query(BudgetEstimatesSummary).filter(BudgetEstimatesSummary.work_plan_id == payload.work_plan_id).first()
+    if not row:
+        row = BudgetEstimatesSummary(work_plan_id=payload.work_plan_id)
+        db.add(row)
+    for field, value in payload.dict(exclude={"work_plan_id"}).items():
+        setattr(row, field, value)
+    row.updated_by_id = admin.id
+    row.updated_at = dt.datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    log_action(db, admin.id, "budget_estimates_summary.update", "Budget Estimates Summary (Part I / A1) updated")
     return row
 
 
