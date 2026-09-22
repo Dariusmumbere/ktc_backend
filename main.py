@@ -4668,8 +4668,20 @@ def _pdf_narrative_flowables(paras, quote=None, signoff=None, bullets=None):
 
 
 def _pdf_exec_summary_flowables():
+    # Two entries below are followed by a forced PageBreak so the PDF's
+    # pagination of the Executive Summary matches the on-screen auto-flow in
+    # index.html (paginateExecutiveSummary()/data-force-break): the "Annual
+    # Budget Framework for FY 2026/27" heading always opens a fresh page
+    # (Page 5), and the "The framework adopts a results-based..." paragraph
+    # right after it always opens the next page (Page 6).
+    _FORCE_BREAK_BEFORE = {
+        ("h3", "Annual Budget Framework for FY 2026/27"),
+        ("p", "The framework adopts a results-based and programme-oriented approach, ensuring that financial resources are directly linked to measurable outputs, outcomes, and performance indicators, guided by principles of fiscal discipline, value for money, equity, transparency, and accountability."),
+    }
     flow = []
     for kind, content in REPORT_EXEC_SUMMARY:
+        if (kind, content) in _FORCE_BREAK_BEFORE:
+            flow.append(PageBreak())
         if kind == "h3":
             flow.append(Paragraph(content, _pdf_h3))
         elif kind == "h4":
