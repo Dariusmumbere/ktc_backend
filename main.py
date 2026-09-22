@@ -1494,11 +1494,94 @@ def seed_data():
                 logger.info("Admin user already existed (created concurrently); skipping seed insert.")
 
         _seed_role_options(db)
+        _backfill_executive_summary(db)
     except Exception as exc:  # noqa: BLE001 - never let seeding crash startup
         db.rollback()
         logger.warning("Startup seeding skipped due to error: %s", exc)
     finally:
         db.close()
+
+
+# One-off content fix, applied automatically on every startup: an earlier
+# save of the Executive Summary (via the Edit/Save UI) got truncated partway
+# through — it cut off right after "2. Financing Strategy and Budget
+# Implementation" and never made it to "3. Results-Based Performance...",
+# the Annual Budget Framework section, or the Annual Workplan Output
+# Performance Targets section. This backfills the complete text.
+#
+# Guarded so it's idempotent and never fights a legitimate future edit: it
+# only overwrites when the currently saved content is missing entirely, or
+# is still that known-truncated version (detected by the absence of the
+# "Annual Budget Framework for FY 2026/27" heading, which only ever appears
+# in the complete version). Once an admin has saved a version that already
+# contains that heading, this function leaves the row alone for good.
+_EXEC_SUMMARY_BACKFILL_MARKER = "Annual Budget Framework for FY 2026/27"
+_EXEC_SUMMARY_BACKFILL_HTML = """
+<h3>Karugutu Town Council Revenue Analysis for FY 2026/27</h3>
+<p>The Council's approved revenue framework for FY 2026/27 amounts to UGX 327,113,640, reflecting a balanced financing strategy that combines Central Government Transfers, Locally Raised Revenue (LRR), and limited development partner support. Central Government Transfers constitute the largest share of the resource envelope at UGX 175,991,640 (53.8%), primarily comprising Urban Unconditional Grant (Non-Wage), Urban Discretionary Development Equalization Grant (DDEG), and the Uganda Road Fund, thereby providing the financial foundation for recurrent service delivery and infrastructure maintenance.</p>
+<p>Locally Raised Revenue is projected at UGX 151,120,000 (46.2%), demonstrating the Council's commitment to strengthening fiscal autonomy through enhanced revenue mobilization. The principal local revenue streams include Market Revenue (UGX 80.0 million), Council Property and Asset Revenues (UGX 19.4 million), Business Licensing and Trade Regulation (UGX 12.1 million), and Physical Planning and Development Control (UGX 12.47 million). Additional revenues are expected from property rates, public health services, transport and parking fees, environmental charges, advertising, enforcement penalties, and other administrative fees, thereby diversifying the local revenue base and reducing dependence on intergovernmental transfers.</p>
+<p>Overall, the Council's FY 2026/27 revenue structure reflects a strategic emphasis on improving local revenue performance while leveraging Government transfers to finance priority programmes, enhance service delivery, strengthen urban governance, and support the sustainable socio-economic development of Karugutu Town Council.</p>
+<h3>Annual Work Plan and Budget Performance Framework Analysis for FY 2026/27</h3>
+<p>On the other hand, the Council's Annual Work Plan and Budget for FY 2026/27 operationalizes the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030) by translating its strategic objectives, priority programmes, and investment interventions into measurable annual outputs, activities, performance targets, and budget allocations. The Work Plan aligns with the Programme-Based Budgeting (PBB) Framework, the Fourth National Development Plan (NDP IV), the Sustainable Development Goals (SDGs), and other relevant national policy and legal frameworks.</p>
+<p>The FY 2026/27 Work Plan serves as the first annual implementation instrument under the Strategic Development Plan, focusing on strengthening institutional governance, expanding infrastructure development, improving urban planning and environmental management, enhancing local revenue mobilisation, promoting local economic development, and improving access to quality public services.</p>
+<h4>1. Budget Allocation and Strategic Investment Priorities</h4>
+<p>The Council has strategically allocated approximately UGX 327.1 million across eight functional departments to finance the 2026/27 Annual Work Plan and a few priority interventions identified in the Five-Year Strategic Development Plan (2025\u20132030).</p>
+<p>The 2026/27 Annual Work Plan and Budget composition demonstrates a strategic emphasis on infrastructure development as a catalyst for economic transformation while simultaneously investing in governance, institutional strengthening, financial accountability, social development, and environmental sustainability.</p>
+<h4>2. Financing Strategy and Budget Implementation</h4>
+<p>Implementation of the Annual Work Plan will be financed through a combination of Locally Raised Revenue, the Urban Unconditional Grant (Non-Wage), the Uganda Road Fund (URF), and the Urban Discretionary Development Equalization Grant (DDEG).</p>
+<p>Routine administrative operations, planning, financial management, community development, governance, monitoring, and regulatory functions are primarily financed through locally generated revenue and unconditional government transfers. Capital-intensive investments are financed through conditional development grants.</p>
+<p>Quarterly budget phasing has been adopted to promote efficient cash flow management, timely implementation of activities, fiscal discipline, and continuous service delivery throughout the financial year.</p>
+<h4>3. Results-Based Performance Management Framework</h4>
+<p>The FY 2026/27 Annual Work Plan adopts a Results-Based Management (RBM) approach in which every budget output is linked to clearly defined performance indicators, baseline values, annual targets, quarterly milestones, funding sources, and responsible officers.</p>
+<p>Priority performance interventions include:</p>
+<ul>
+<li>Improving road infrastructure and engineering services to enhance connectivity and economic productivity.</li>
+<li>Strengthening local revenue mobilization and financial compliance to improve fiscal sustainability.</li>
+<li>Promoting orderly urban growth through spatial planning, GIS mapping, and effective development control.</li>
+<li>Enhancing democratic governance through Council meetings, Standing Committees, Ward Development Committees, public barazas, and citizen engagement.</li>
+<li>Supporting agricultural production, veterinary services, food safety, and enterprise development to stimulate household incomes.</li>
+<li>Expanding community empowerment programmes focusing on gender equality, youth employment, disability inclusion, child protection, and vulnerable groups.</li>
+<li>Strengthening internal controls, financial accountability, procurement compliance, and value-for-money assurance through independent internal audit functions.</li>
+</ul>
+<h4>4. Monitoring, Evaluation and Accountability</h4>
+<p>Implementation of the Annual Work Plan will be monitored through quarterly performance reviews, Technical Planning Committee meetings, field supervision, internal audits, Council oversight, statutory reporting, and annual performance assessments.</p>
+<p>The integration of digital planning tools, electronic records management, GIS-based planning systems, and performance reporting further reinforces the Council's commitment to transparency, innovation, and effective public sector management.</p>
+<h4>5. Strategic Outlook</h4>
+<p>The FY 2026/27 Annual Work Plan represents the practical implementation roadmap for the Karugutu Town Council Five-Year Strategic Development Plan (2025\u20132030), providing a clear pathway for achieving the Council's long-term development aspirations while ensuring accountability, efficiency, and value for public resources.</p>
+<h3 data-force-break="true">Annual Budget Framework for FY 2026/27</h3>
+<p>The Annual Budget Framework for FY 2026/27 provides the strategic financial planning and resource allocation mechanism through which Karugutu Town Council will implement its development priorities and statutory mandates during the financial year 1 July 2026 to 30 June 2027.</p>
+<p>The budget framework is financed through a combination of locally generated revenue, central government transfers, external financing where applicable, and other lawful sources of revenue, allocated across programmes, departments, and budget outputs.</p>
+<p data-force-break="true">The framework adopts a results-based and programme-oriented approach, ensuring that financial resources are directly linked to measurable outputs, outcomes, and performance indicators, guided by principles of fiscal discipline, value for money, equity, transparency, and accountability.</p>
+<p>To enhance accountability and effective budget execution, the Council will undertake participatory planning, stakeholder consultations, budget conferences, technical planning committee reviews, council approvals, and regular monitoring and evaluation.</p>
+<h3>Annual Workplan and Budget Output Performance Targets for FY 2026/27</h3>
+<p>The Karugutu Town Council Annual Workplan and Budget Output Performance Targets document serves as the formal ex-ante planning instrument, translating national strategic objectives into localized service delivery milestones, formulated under the Programme Budgeting System (PBS) and the Programme Implementation Action Plans (PIAP) framework.</p>
+<p>Structured hierarchically by Vote, Programme, Sub-Sub Programme, and distinct Budget Outputs, this workplan maps out every operational shilling against verifiable targets.</p>
+<p>Key Features of the Annual Workplan Framework:</p>
+<ul>
+<li>Logical Performance Tracking: Every expenditure line item links directly to a designated baseline value, a clear quarterly cash distribution projection, and a specified PIAP Output Indicator.</li>
+<li>Decentralized Service Monitoring: Operational target structures are embedded directly into daily service points.</li>
+<li>Verifiable Statutory Accountability: The planned targets establish a strict compliance baseline for ex-post audits, used during Annual Local Government Performance Assessment (LGPA) cycles.</li>
+</ul>
+<p>Ultimately, the detailed document hereunder stands as Karugutu Town Council's binding operational commitment to transparency, evidence-based public financial management, and equitable development.</p>
+""".strip()
+
+
+def _backfill_executive_summary(db: Session):
+    row = db.query(ReportFrontmatter).filter(ReportFrontmatter.id == 1).first()
+    current = (row.executive_summary_html if row else None) or ""
+    if _EXEC_SUMMARY_BACKFILL_MARKER in current:
+        return  # already complete (or an admin has since saved their own version that includes this section) — leave it alone
+    if not row:
+        row = ReportFrontmatter(id=1)
+        db.add(row)
+    was_empty = not current
+    row.executive_summary_html = _EXEC_SUMMARY_BACKFILL_HTML
+    row.updated_at = dt.datetime.utcnow()
+    db.commit()
+    logger.info(
+        "Backfilled executive_summary_html (%s).",
+        "row was empty" if was_empty else "replaced truncated content",
+    )
 
 
 def _seed_role_options(db: Session):
