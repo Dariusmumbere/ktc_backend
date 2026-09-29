@@ -4837,7 +4837,7 @@ def _pdf_letterhead_image(max_width=460):
 
 def _pdf_money(n) -> str:
     """Format a number the same way the frontend's money() helper does."""
-    return f"{parse_amount(n):,.0f}"
+    return f"{parse_amount(n):,.1f}"
 
 
 def _pdf_narrative_flowables(paras, quote=None, signoff=None, bullets=None):
