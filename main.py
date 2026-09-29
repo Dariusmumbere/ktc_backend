@@ -4,6 +4,7 @@ import re
 import json
 import time
 import uuid
+import urllib.parse
 import logging
 import datetime as dt
 from decimal import Decimal
@@ -756,6 +757,18 @@ class Document(Base):
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     requisition = relationship("Requisition", back_populates="documents")
+
+
+class Publication(Base):
+    # Admin-uploaded documents shareable via a public link (/p/{token}).
+    __tablename__ = "publications"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    filename = Column(String(255), nullable=False)
+    stored_path = Column(String(500), nullable=False)
+    token = Column(String(64), unique=True, index=True, nullable=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
 
 
 class Notification(Base):
@@ -5405,6 +5418,65 @@ def dashboard_stats(db: Session = Depends(get_db), user: User = Depends(get_curr
             for r in recent
         ],
     }
+
+
+# ---------------------------- Publications -----------------------------------
+
+def _publication_to_dict(p: Publication) -> dict:
+    return {"id": p.id, "title": p.title, "filename": p.filename, "token": p.token,
+            "created_at": p.created_at.isoformat() if p.created_at else None}
+
+
+@app.get("/api/publications")
+def list_publications(db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    rows = db.query(Publication).order_by(Publication.created_at.desc()).all()
+    return [_publication_to_dict(p) for p in rows]
+
+
+@app.post("/api/publications")
+async def create_publication(title: str = Query(""), file: UploadFile = File(...),
+                             db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".jpg", ".jpeg", ".png"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    key = await upload_document_to_b2(file, "publications")
+    pub = Publication(
+        title=(title.strip() or os.path.splitext(file.filename or "Untitled")[0])[:255],
+        filename=file.filename or "document",
+        stored_path=key,
+        token=uuid.uuid4().hex,
+        uploaded_by=admin.id,
+    )
+    db.add(pub)
+    db.commit()
+    db.refresh(pub)
+    log_action(db, admin.id, "publication.upload", pub.title)
+    return _publication_to_dict(pub)
+
+
+@app.delete("/api/publications/{pub_id}")
+def delete_publication(pub_id: int, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+    pub = db.query(Publication).filter(Publication.id == pub_id).first()
+    if not pub:
+        raise HTTPException(status_code=404, detail="Publication not found")
+    delete_document_from_b2(pub.stored_path)
+    title = pub.title
+    db.delete(pub)
+    db.commit()
+    log_action(db, admin.id, "publication.delete", title)
+    return {"ok": True}
+
+
+@app.get("/p/{token}")
+async def open_publication(token: str, request: Request, db: Session = Depends(get_db)):
+    # Public share link: opens the document immediately in the browser.
+    pub = db.query(Publication).filter(Publication.token == token).first()
+    if not pub:
+        raise HTTPException(status_code=404, detail="Document not found")
+    resp = await stream_document(pub.stored_path, request, db)
+    safe = urllib.parse.quote(pub.filename)
+    resp.headers["Content-Disposition"] = f"inline; filename*=UTF-8''{safe}"
+    return resp
 
 
 @app.get("/api/reports/audit-view/{req_id}")
